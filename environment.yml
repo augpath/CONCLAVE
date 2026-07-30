@@ -1,0 +1,83 @@
+# ============================================================================
+# CONCLAVE Conda Environment with GPU Support
+# ============================================================================
+# This file is for users who want GPU acceleration with NVIDIA GPUs.
+# 
+# Create environment with:
+#   conda env create -f environment.yml
+#   conda activate conclave
+#   pip install conclave
+#
+# Requirements:
+#   - NVIDIA GPU with Compute Capability 7.0+ (Volta or newer)
+#   - CUDA 11.2+ or 12.x
+# ============================================================================
+
+name: conclave
+channels:
+  - rapidsai      # For cuML (GPU acceleration)
+  - conda-forge   # For most Python packages
+  - nvidia        # For CUDA toolkit
+  - defaults
+
+dependencies:
+  # Python version
+  - python=3.10
+  
+  # ========================================================================
+  # Core Scientific Computing
+  # ========================================================================
+  - numpy>=1.22,<2.0
+  - pandas>=1.5,<3.0
+  - scipy>=1.9,<2.0
+  - scikit-learn>=1.0,<2.0
+  
+  # ========================================================================
+  # Visualization
+  # ========================================================================
+  - matplotlib>=3.7,<4.0
+  - seaborn>=0.11,<1.0
+  
+  # ========================================================================
+  # Dimensionality Reduction & Clustering
+  # ========================================================================
+  - umap-learn>=0.5.3
+  - leidenalg>=0.10.0
+  - python-igraph>=0.10
+  
+  # ========================================================================
+  # File I/O
+  # ========================================================================
+  - openpyxl>=3.0
+  
+  # ========================================================================
+  # GPU Acceleration (NVIDIA RAPIDS)
+  # ========================================================================
+  # cuML provides GPU-accelerated machine learning (10-100x speedup)
+  - cuml=26.02
+  - cuda-version=12.2
+  
+  # ========================================================================
+  # PyPI-only Packages (not available in conda)
+  # ========================================================================
+  - pip
+  - pip:
+      - phenograph>=1.5.7
+      - conclave  # Install from PyPI after environment is created
+
+# ============================================================================
+# Installation Instructions:
+# ============================================================================
+# 1. Create environment:
+#      conda env create -f environment.yml
+#
+# 2. Activate environment:
+#      conda activate conclave
+#
+# 3. Verify GPU support:
+#      python -c "import cuml; print('GPU OK')"
+#
+# 4. Use CONCLAVE with GPU acceleration:
+#      from conclave import run_annotation_pipeline
+#      run_annotation_pipeline(..., use_gpu=True)
+# ============================================================================

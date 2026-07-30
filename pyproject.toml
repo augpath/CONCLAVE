@@ -1,0 +1,169 @@
+# ============================================================================
+# CONCLAVE Package Configuration
+# ============================================================================
+# This is the PRIMARY configuration file for the package.
+# It defines dependencies, metadata, and build settings.
+
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ============================================================================
+# Project Metadata
+# ============================================================================
+[project]
+name = "conclave"
+version = "1.0.0"
+description = "Consensus-based Labeling with Automated Evaluation for single-cell data analysis"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+
+authors = [
+    {name = "CONCLAVE Development Team", email = "conclave@example.com"}
+]
+
+maintainers = [
+    {name = "CONCLAVE Development Team", email = "conclave@example.com"}
+]
+
+keywords = [
+    "bioinformatics", 
+    "single-cell", 
+    "clustering", 
+    "consensus", 
+    "cytometry", 
+    "flow-cytometry",
+    "mass-cytometry",
+    "CyTOF",
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+]
+
+# ============================================================================
+# Core Dependencies
+# ============================================================================
+# These are installed automatically when users run: pip install conclave
+# Version constraints prevent breaking changes while allowing updates
+
+dependencies = [
+    # Core scientific computing
+    "numpy>=1.22,<2.0",      # Avoid numpy 2.0 breaking changes
+    "pandas>=1.5,<3.0",      # Flexible but avoid major breaks
+    "scipy>=1.9,<2.0",
+    
+    # Machine learning
+    "scikit-learn>=1.0,<2.0",
+    
+    # Visualization
+    "matplotlib>=3.7,<4.0",
+    "seaborn>=0.11,<1.0",
+    
+    # Dimensionality reduction & clustering
+    "umap-learn>=0.5.3",
+    "phenograph>=1.5.7",
+    "leidenalg>=0.10.0",
+    "python-igraph>=0.10",
+    
+    # File I/O
+    "openpyxl>=3.0",
+]
+
+# ============================================================================
+# Optional Dependencies
+# ============================================================================
+# Users can install these with: pip install conclave[gpu] or conclave[dev]
+
+[project.optional-dependencies]
+
+# GPU acceleration (NOT automatically installed - requires conda)
+# Note: cuML is only available through conda, not PyPI
+# Users should install via: conda install -c rapidsai cuml
+gpu = [
+    # Placeholder - actual GPU packages installed via conda
+    # See installation instructions in README
+]
+
+# Development tools
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.10",
+    "black>=23.0",
+    "flake8>=6.0",
+    "mypy>=1.0",
+    "isort>=5.12",
+]
+
+# Documentation
+docs = [
+    "sphinx>=6.0",
+    "sphinx-rtd-theme>=1.2",
+    "sphinx-autodoc-typehints>=1.23",
+]
+
+# All optional dependencies
+all = [
+    "conclave[dev,docs]",
+]
+
+# ============================================================================
+# URLs
+# ============================================================================
+[project.urls]
+Homepage = "https://github.com/augpath/CONCLAVE"
+Documentation = "https://conclave.readthedocs.io"
+Repository = "https://github.com/augpath/CONCLAVE"
+Issues = "https://github.com/augpath/CONCLAVE/issues"
+Changelog = "https://github.com/augpath/CONCLAVE/blob/main/CHANGELOG.md"
+
+# ============================================================================
+# Package Discovery
+# ============================================================================
+[tool.setuptools]
+packages = ["conclave", "conclave.phase1", "conclave.phase2"]
+
+[tool.setuptools.package-data]
+conclave = ["py.typed"]
+
+# ============================================================================
+# Testing Configuration
+# ============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+
+# ============================================================================
+# Code Formatting
+# ============================================================================
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+# ============================================================================
+# Type Checking
+# ============================================================================
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

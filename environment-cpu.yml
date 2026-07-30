@@ -1,0 +1,67 @@
+# ============================================================================
+# CONCLAVE Conda Environment - CPU Only
+# ============================================================================
+# This file is for users WITHOUT GPU who want to use conda.
+# 
+# Create environment with:
+#   conda env create -f environment-cpu.yml
+#   conda activate conclave-cpu
+#   pip install conclave
+# ============================================================================
+
+name: conclave-cpu
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python version
+  - python=3.10
+  
+  # ========================================================================
+  # Core Scientific Computing
+  # ========================================================================
+  - numpy>=1.22,<2.0
+  - pandas>=1.5,<3.0
+  - scipy>=1.9,<2.0
+  - scikit-learn>=1.0,<2.0
+  
+  # ========================================================================
+  # Visualization
+  # ========================================================================
+  - matplotlib>=3.7,<4.0
+  - seaborn>=0.11,<1.0
+  
+  # ========================================================================
+  # Dimensionality Reduction & Clustering
+  # ========================================================================
+  - umap-learn>=0.5.3
+  - leidenalg>=0.10.0
+  - python-igraph>=0.10
+  
+  # ========================================================================
+  # File I/O
+  # ========================================================================
+  - openpyxl>=3.0
+  
+  # ========================================================================
+  # PyPI-only Packages
+  # ========================================================================
+  - pip
+  - pip:
+      - phenograph>=1.5.7
+      - conclave  # Install from PyPI
+
+# ============================================================================
+# Installation Instructions:
+# ============================================================================
+# 1. Create environment:
+#      conda env create -f environment-cpu.yml
+#
+# 2. Activate environment:
+#      conda activate conclave-cpu
+#
+# 3. Use CONCLAVE (CPU mode):
+#      from conclave import run_annotation_pipeline
+#      run_annotation_pipeline(..., use_gpu=False)
+# ============================================================================
