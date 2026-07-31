@@ -106,7 +106,7 @@ def normalize_markers(
     
     # Prepare output
     out = df.copy()
-    normalized_values = pd.DataFrame(index=df.index, columns=markers)
+    normalized_values = pd.DataFrame(index=df.index, columns=markers, dtype=np.float64)
     
     # Track normalization issues per sample
     issues = {
