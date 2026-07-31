@@ -95,6 +95,13 @@ gpu = [
     # See installation instructions in README
 ]
 
+# Optional dimensionality-reduction backend (PaCMAP is one of the 5 options
+# run_dr() supports, but isn't a core dependency since most users only need
+# PCA/UMAP/t-SNE, which ship with core deps)
+dr = [
+    "pacmap>=0.7",
+]
+
 # Development tools
 dev = [
     "pytest>=7.0",
@@ -115,7 +122,7 @@ docs = [
 
 # All optional dependencies
 all = [
-    "conclave[dev,docs]",
+    "conclave[dr,dev,docs]",
 ]
 
 # ============================================================================
