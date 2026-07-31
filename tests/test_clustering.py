@@ -63,6 +63,19 @@ def test_affinity_propagation_runs_on_small_data(small_df, markers):
     assert len(labels) == len(small_df)
 
 
+def test_affinity_propagation_seed_and_logger_do_not_leak_into_other_params(small_df, markers, caplog):
+    """Regression test: cluster_affinity_labels(X_df, damping=..., max_iter=..., seed=...,
+    logger=...) was previously called elsewhere in the package with positional args
+    (X_df, seed, logger), which silently bound `seed` to `damping` and a logger object
+    to `max_iter` -- the latter would break sklearn's AffinityPropagation outright, since
+    max_iter must be an int. This test calls it the same way the real pipeline does
+    (keyword args) and checks it doesn't blow up with a logger object in a numeric slot."""
+    import logging
+    logger = logging.getLogger("conclave_test_affinity")
+    labels = cluster_affinity_labels(small_df[markers], seed=42, logger=logger)
+    assert len(labels) == len(small_df)
+
+
 def test_affinity_propagation_known_limitation_above_5000_cells(markers):
     """Documents the known (not-yet-fixed) behavior: for >5000 cells,
     cluster_affinity_labels subsamples to 5000, clusters those, and leaves

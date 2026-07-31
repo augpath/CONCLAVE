@@ -602,7 +602,7 @@ def cluster_annotation_subset(
             elif method == "dbscan":
                 labels = cluster_dbscan_labels(X_df, logger=logger)
             elif method == "affinity":
-                labels = cluster_affinity_labels(X_df, seed, logger)
+                labels = cluster_affinity_labels(X_df, seed=seed, logger=logger)
             
             else:
                 raise ValueError(f"Unknown clustering method: {method}")
@@ -736,7 +736,7 @@ def run_incremental_clustering(
                 labels = cluster_birch_labels(X_df, n_clusters, logger)
             
             elif method == "affinity":
-                labels = cluster_affinity_labels(X_df, seed, logger)
+                labels = cluster_affinity_labels(X_df, seed=seed, logger=logger)
             
             elif method == "meanshift":
                 labels = cluster_meanshift_labels(X_df, logger)
