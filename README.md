@@ -9,7 +9,10 @@ A comprehensive Python package for single-cell data analysis featuring multi-met
 ## Features
 
 ### Phase 1: Multi-Method Clustering
-- ✅ **8 clustering algorithms**: PhenoGraph, FlowSOM, K-means, Leiden, Agglomerative, Birch, Affinity, MiniBatch
+- ✅ **10 native Python clustering algorithms**: PhenoGraph, K-means, MiniBatchKMeans, Leiden, Agglomerative, BIRCH, Affinity Propagation, MeanShift, DBSCAN, Spectral
+- ✅ **2 R-based algorithms**: FlowSOM, DepecheR (require R + those packages installed; reference scripts in `conclave/r_scripts/`)
+- ✅ **5 dimensionality-reduction options**: None (raw marker space), PCA, UMAP, PaCMAP, t-SNE
+- ✅ **4 normalization methods**: None, z-score, log-normalize, min-max (quantile-winsorized), each optionally computed per-sample or pooled
 - ✅ **GPU acceleration**: 10-100x faster with NVIDIA RAPIDS (optional)
 - ✅ **Multi-sample support**: Batch-aware normalization
 - ✅ **Quality checks**: Automated validation and visualization
@@ -23,13 +26,16 @@ A comprehensive Python package for single-cell data analysis featuring multi-met
 
 ## Installation
 
-### Quick Install (Most Users)
+> **⚠️ Not yet on PyPI.** `conclave` is already taken by an unrelated project
+> (a Bitcoin-network client), so this package will need a different
+> distribution name before publishing — `pip install conclave` will NOT
+> install this package. Until then, install from GitHub:
+
+### Quick Install (from GitHub)
 
 ```bash
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git
 ```
-
-That's it! All dependencies are installed automatically.
 
 ### Verify Installation
 
@@ -47,7 +53,7 @@ For 10-100x speedup on large datasets:
 conda install -c rapidsai -c conda-forge -c nvidia cuml=26.02 cuda-version=12.2 -y
 
 # Step 2: Install CONCLAVE
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git
 
 # Step 3: Verify GPU support
 python -c "import cuml; print('GPU support available')"
@@ -62,18 +68,20 @@ python -c "import cuml; print('GPU support available')"
 
 **For GPU users:**
 ```bash
-# Download environment.yml from GitHub
+git clone https://github.com/augpath/CONCLAVE.git
+cd CONCLAVE
 conda env create -f environment.yml
 conda activate conclave
-pip install conclave
+pip install .
 ```
 
 **For CPU-only users:**
 ```bash
-# Download environment-cpu.yml from GitHub
+git clone https://github.com/augpath/CONCLAVE.git
+cd CONCLAVE
 conda env create -f environment-cpu.yml
 conda activate conclave-cpu
-pip install conclave
+pip install .
 ```
 
 ## Quick Start
@@ -82,66 +90,125 @@ pip install conclave
 
 ```python
 import pandas as pd
-from conclave import run_annotation_pipeline
+from conclave.phase1 import run_annotation_pipeline_with_resume
 
 # Load your single-cell data
 df = pd.read_csv("your_data.csv")
 
-# Define markers
-markers = ["CD3", "CD4", "CD8", "CD20", "CD45", ...]
+# Define the markers to cluster on
+markers = ["CD3", "CD4", "CD8", "CD20", "CD45"]  # replace with your panel
 
 # Run Phase 1 clustering
-df_clustered, metadata = run_annotation_pipeline(
+df_clustered, metadata = run_annotation_pipeline_with_resume(
     df=df,
     markers=markers,
     outdir="./output_phase1",
-    use_gpu=True,  # Set False if no GPU
-    cluster_methods=("phenograph", "flowsom", "kmeans"),
+    sample_cols=["sample_id"],   # column identifying slide/sample, for batch-aware normalization; None to pool all cells
+    normalization="z-score",
+    sampling="stratified-notproportional",
     sample_size=20000,
+    cluster_methods=("phenograph", "kmeans"),  # add "flowsom"/"depeche" if you have R + those packages set up (see conclave/r_scripts/)
+    phenograph_k=25,
+    derive_kmeans_from="phenograph",
 )
 
 print(f"✅ Clustered {len(df_clustered):,} cells")
 ```
 
+For a guided, runnable walkthrough (including how to pick markers by inspecting your own CSV, and every normalization/sampling/DR/clustering option with its hyperparameters), see the `CONCLAVE_Phase1.ipynb` and `CONCLAVE_Phase1_Reference.ipynb` notebooks.
+
 **Phase 1 Outputs:**
 ```
 output_phase1/
+├── 00_sanitycheck/
+│   ├── sanity_report.json
+│   └── normalization_report.json
 ├── 01_normalized_full.csv
 ├── 02_sampled_full.csv
+├── 02_dr/dr_matrix.csv             (if dr_method was set)
 ├── 03_clustering_annotation/
 │   └── clustered_subset_with_labels_on_sampled.csv
-└── 04_cluster_heatmaps/
-    ├── heatmap_topN_ranked_phenograph.png
-    ├── annotation_template_phenograph.csv  ← Annotate these!
-    └── ...
+├── 04_cluster_heatmaps/
+│   ├── heatmap_topN_ranked_<method>.png
+│   ├── annotation_template_<method>.csv  ← Annotate these!
+│   ├── cluster_topN_wide_<method>.csv
+│   ├── cluster_topN_long_<method>.csv
+│   └── cluster_sizes_<method>.csv
+├── pipeline_run_config.json         (full record of parameters used)
+└── pipeline_log.txt
 ```
 
 ### Phase 2: Consensus & Projection
 
-After manually annotating clusters using the templates from Phase 1:
+After manually annotating clusters using the templates from Phase 1 (fill in the
+`annotation` column of each `annotation_template_<method>.csv` and save it):
+
+> **⚠️ Current limitation:** `run_phase2_complete()` does not yet accept your
+> data/markers/paths as function arguments — it reads them from module-level
+> variables in `conclave.phase2.pipeline_complete`. This also means
+> `import conclave` currently creates `./output_phase2/` on disk using
+> default settings tuned for the CONCLAVE manuscript's melanoma panel. This
+> is a known issue slated for a proper kwargs-based refactor; until then,
+> **every** variable below needs setting — several (`CLUSTERED_FILE`,
+> `FULL_DATA_FILE`, `ANNOTATION_FILES`) are derived once from the defaults
+> at import time and won't update just by changing `PHASE1_OUTPUT` /
+> `ANNOTATIONS_DIR` afterward:
 
 ```python
-from conclave import run_phase2_complete
+from pathlib import Path
+import conclave.phase2.pipeline_complete as p2
 
-# Run Phase 2 (annotate all 643k+ cells)
-df_labeled, template, single_templates, report = run_phase2_complete()
+phase1_out = Path("./output_phase1")
+phase2_out = Path("./output_phase2")
+annotations_dir = Path("./annotations")  # your filled-in annotation_template_<method>.csv files, renamed/copied here
+
+p2.PHASE1_OUTPUT = phase1_out
+p2.PHASE2_OUTPUT = phase2_out
+p2.ANNOTATIONS_DIR = annotations_dir
+
+# Derived paths -- must be set explicitly, they do NOT auto-update above
+p2.CLUSTERED_FILE = phase1_out / "03_clustering_annotation" / "clustered_subset_with_labels_on_sampled.csv"
+p2.FULL_DATA_FILE = phase1_out / "01_normalized_full.csv"
+p2.ANNOTATION_FILES = {
+    "phenograph": annotations_dir / "phenograph_annotated.csv",
+    "kmeans": annotations_dir / "kmeans_annotated.csv",
+    # one entry per method you ran in Phase 1
+}
+
+p2.MARKERS = markers  # same marker list used in Phase 1
+p2.CONSENSUS_METHODS = ["phenograph", "kmeans"]  # match what you ran in Phase 1
+p2.KNN_K = 25
+p2.SAMPLE_COLS = ["sample_id"]  # match what you used in Phase 1
+
+# Output dirs are created at import time using the OLD default path --
+# recreate them at your actual PHASE2_OUTPUT location
+p2.PHASE2_OUTPUT.mkdir(parents=True, exist_ok=True)
+(p2.PHASE2_OUTPUT / "templates").mkdir(exist_ok=True)
+(p2.PHASE2_OUTPUT / "plots").mkdir(exist_ok=True)
+
+df_labeled, template, single_templates, report = p2.run_phase2_complete()
 
 print(f"✅ Labeled {len(df_labeled):,} cells")
 print(f"Consensus confidence: {df_labeled['confidence_score'].mean():.3f}")
-print(f"Disagreement: {report['full_dataset']['disagreement_pct']:.1f}%")
 ```
+
+This full sequence has been verified end-to-end against real data.
 
 **Phase 2 Outputs:**
 ```
 output_phase2/
 ├── full_dataset_labeled_complete.csv  ← All cells labeled!
+├── template_with_flags.csv
+├── consensus_template.csv
 ├── metrics_summary.csv
 ├── phase2_complete_report.json
-└── plots/ (17+ visualizations)
-    ├── disagreement_by_sample_flagged.png
+└── plots/
+    ├── disagreement_ranked_RED.png
+    ├── confidence_distribution.png
+    ├── umap_3d_consensus.png
+    ├── umap_3d_<method>.png            (one per method)
     ├── jsd_mean_per_sample_scatter.png
     ├── spatial_confidence_heatmap_tiles.png
-    ├── umap_3d_consensus.png
     └── ...
 ```
 
@@ -170,7 +237,7 @@ output_phase2/
 
 ## Dependencies
 
-All dependencies are **automatically installed** with `pip install conclave`:
+All dependencies are **automatically installed** when you install from GitHub:
 
 - numpy (>=1.22, <2.0)
 - pandas (>=1.5, <3.0)
@@ -198,11 +265,11 @@ ModuleNotFoundError: No module named 'pandas'
 ```
 
 **Solution:**
-This shouldn't happen if you installed via `pip install conclave`. If it does:
+This shouldn't happen if you installed via the command above. If it does:
 ```bash
 pip install --upgrade pip
 pip uninstall conclave -y
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git --no-cache-dir
 ```
 
 ### Issue: GPU Not Working
@@ -251,7 +318,7 @@ See [CONTRIBUTING.md](https://github.com/augpath/CONCLAVE/blob/main/CONTRIBUTING
 
 - **Issues**: https://github.com/augpath/CONCLAVE/issues
 - **Discussions**: https://github.com/augpath/CONCLAVE/discussions
-- **Email**: conclave@example.com
+- **Email**: (contact info to be added)
 
 ## Changelog
 

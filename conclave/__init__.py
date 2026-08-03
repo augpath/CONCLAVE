@@ -12,14 +12,15 @@ Modules:
 
 Example Usage:
 --------------
->>> from conclave.phase1.pipeline import run_annotation_pipeline
->>> from conclave.phase2.pipeline_complete import run_phase2_complete
+>>> from conclave.phase1 import run_annotation_pipeline_with_resume
+>>> import conclave.phase2.pipeline_complete as p2
 >>> 
 >>> # Phase 1: Clustering
->>> df_clustered, meta = run_annotation_pipeline(df, markers, outdir)
+>>> df_clustered, meta = run_annotation_pipeline_with_resume(df, markers, outdir)
 >>> 
->>> # Phase 2: Consensus & Projection  
->>> df_labeled, template, report = run_phase2_complete()
+>>> # Phase 2: Consensus & Projection (set p2.MARKERS, p2.PHASE1_OUTPUT, etc.
+>>> # before calling -- see README.md for the full required configuration)
+>>> df_labeled, template, single_templates, report = p2.run_phase2_complete()
 
 Version: 1.0.0
 Author: CONCLAVE Development Team

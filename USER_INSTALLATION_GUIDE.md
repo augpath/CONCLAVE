@@ -12,14 +12,18 @@ Complete installation instructions for CONCLAVE users.
 
 ---
 
-## Method 1: pip (Simple) - Recommended
+## Method 1: pip from GitHub - Recommended
 
 **Best for:** CPU-only users, quick installation
+
+> ⚠️ Not yet on PyPI -- `conclave` is already taken by an unrelated project,
+> so this will need a different distribution name before real PyPI
+> publication. For now, install directly from GitHub:
 
 ### Installation
 
 ```bash
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git
 ```
 
 That's it! All dependencies are automatically installed.
@@ -34,7 +38,7 @@ python -c "import conclave; print(conclave.__version__)"
 ### Test It Works
 
 ```python
-from conclave import run_annotation_pipeline
+from conclave.phase1 import run_annotation_pipeline_with_resume
 print("✅ CONCLAVE is ready to use!")
 ```
 
@@ -79,7 +83,7 @@ This installs:
 ### Step 4: Install CONCLAVE
 
 ```bash
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git
 ```
 
 ### Step 5: Verify GPU Support
@@ -98,14 +102,14 @@ EOF
 ### Using GPU in CONCLAVE
 
 ```python
-from conclave import run_annotation_pipeline
+from conclave.phase1 import run_annotation_pipeline_with_resume
 
 # Use GPU acceleration
-df_clustered, meta = run_annotation_pipeline(
+df_clustered, meta = run_annotation_pipeline_with_resume(
     df=df,
     markers=markers,
-    use_gpu=True,  # ← Enable GPU
-    outdir="./output"
+    outdir="./output",
+    use_gpu=True,  # ← Enable GPU (used for the sampling step's UMAP embedding)
 )
 ```
 
@@ -119,7 +123,7 @@ df_clustered, meta = run_annotation_pipeline(
 
 ```bash
 git clone https://github.com/augpath/CONCLAVE.git
-cd conclave
+cd CONCLAVE
 ```
 
 ### Step 2: Install in Editable Mode
@@ -162,7 +166,7 @@ Download `environment-cpu.yml` from GitHub
 ```bash
 conda env create -f environment-cpu.yml
 conda activate conclave-cpu
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git
 ```
 
 ---
@@ -223,19 +227,19 @@ EOF
 
 ### Issue: ModuleNotFoundError: No module named 'pandas'
 
-**This shouldn't happen!** Dependencies should auto-install with `pip install conclave`.
+**This shouldn't happen!** Dependencies should auto-install with the install command above.
 
 **Solution:**
 ```bash
 # Reinstall with explicit dependency installation
 pip uninstall conclave -y
-pip install conclave --no-cache-dir
+pip install git+https://github.com/augpath/CONCLAVE.git --no-cache-dir
 
 # Verify dependencies
 pip show conclave | grep Requires
 ```
 
-### Issue: pip install conclave fails
+### Issue: pip install (from GitHub) fails
 
 **Possible causes:**
 1. Old pip version
@@ -252,7 +256,7 @@ python --version
 # Must be 3.8 or higher
 
 # Try again
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git
 ```
 
 ### Issue: GPU not detected
@@ -310,12 +314,12 @@ ERROR: Could not install packages due to an OSError: [Errno 13] Permission denie
 **Solution:**
 ```bash
 # Install in user directory
-pip install --user conclave
+pip install --user git+https://github.com/augpath/CONCLAVE.git
 
 # OR use virtual environment
 python -m venv venv
 source venv/bin/activate
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git
 ```
 
 ---
@@ -336,13 +340,13 @@ source conclave_env/bin/activate  # Linux/Mac
 conclave_env\Scripts\activate     # Windows
 
 # Install
-pip install conclave
+pip install git+https://github.com/augpath/CONCLAVE.git
 ```
 
 ### Update CONCLAVE
 
 ```bash
-pip install --upgrade conclave
+pip install --upgrade git+https://github.com/augpath/CONCLAVE.git
 ```
 
 ### Uninstall CONCLAVE
@@ -415,10 +419,10 @@ python -c "import cuml; print(cuml.__version__)"
 Once installed, you can start using CONCLAVE:
 
 ```python
-from conclave import run_annotation_pipeline
+from conclave.phase1 import run_annotation_pipeline_with_resume
 
 # Your analysis here
-df_clustered, meta = run_annotation_pipeline(...)
+df_clustered, meta = run_annotation_pipeline_with_resume(...)
 ```
 
 Welcome to the CONCLAVE community! 🎊
