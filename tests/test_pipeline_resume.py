@@ -42,3 +42,44 @@ def test_resume_after_crash_with_dr_method_none(small_df, markers, tmp_path):
 
     assert len(df_labeled) == len(small_df)
     assert "phenograph" in meta["results"]["cluster_counts"]
+
+
+def test_resume_regenerates_visualizations_for_newly_added_method(small_df, markers, tmp_path):
+    """Regression test for a real bug found via user testing: after a
+    successful run with methods A+B, adding method C to cluster_methods and
+    resuming correctly re-ran clustering for C (Step 5 already checked
+    per-method), but Step 6 (heatmaps/annotation templates) only checked
+    whether *a* visualization checkpoint existed at all, not whether it
+    covered every currently-requested method -- so C's heatmap/annotation
+    files silently never got created despite clustering succeeding for it."""
+    import os
+
+    outdir = tmp_path / "phase1_output"
+
+    # Run 1: two methods
+    run_annotation_pipeline_with_resume(
+        df=small_df, markers=markers, outdir=str(outdir),
+        sample_size=len(small_df), dr_method=None,
+        cluster_methods=("phenograph", "kmeans"),
+        phenograph_k=5, derive_kmeans_from="phenograph",
+        resume=True, force_restart=False,
+    )
+    heatmap_dir = outdir / "04_cluster_heatmaps"
+    files_after_run1 = set(os.listdir(heatmap_dir))
+    assert any("kmeans" in f for f in files_after_run1)
+    assert not any("minibatchkmeans" in f for f in files_after_run1)
+
+    # Run 2: add a third method, resume
+    run_annotation_pipeline_with_resume(
+        df=small_df, markers=markers, outdir=str(outdir),
+        sample_size=len(small_df), dr_method=None,
+        cluster_methods=("phenograph", "kmeans", "minibatchkmeans"),
+        phenograph_k=5, derive_kmeans_from="phenograph",
+        resume=True, force_restart=False,
+    )
+    files_after_run2 = set(os.listdir(heatmap_dir))
+    mbk_files = [f for f in files_after_run2 if "minibatchkmeans" in f]
+    assert len(mbk_files) >= 4, (
+        f"Expected heatmap/annotation/topN files for minibatchkmeans after "
+        f"resuming with it newly added, got: {mbk_files}"
+    )

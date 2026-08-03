@@ -439,7 +439,25 @@ def run_annotation_pipeline(
     # ================================================================
     # STEP 6: Visualization
     # ================================================================
+    # NOTE: unlike Step 5 (clustering), this used to only check whether A
+    # visualization checkpoint existed at all -- not whether it actually
+    # covered every currently-requested method. Adding a new method to
+    # cluster_methods and resuming would silently skip regenerating
+    # heatmaps/annotation templates for it, even though clustering itself
+    # correctly re-ran and included the new method. Mirror Step 5's
+    # existing/missing-methods check here too.
+    viz_can_resume = False
     if _resume and check_checkpoint_exists(outdir, 'visualization'):
+        viz_checkpoint = load_checkpoint(outdir, 'visualization', logger)
+        viz_outputs = (viz_checkpoint or {}).get('outputs', {}) or {}
+        viz_missing_methods = [
+            m for m in cluster_methods
+            if m.strip().lower() not in viz_outputs
+        ]
+        if not viz_missing_methods:
+            viz_can_resume = True
+
+    if viz_can_resume:
         logger.info("")
         logger.info("STEP 6: Cluster Visualization")
         logger.info("-" * 80)
@@ -452,6 +470,11 @@ def run_annotation_pipeline(
         logger.info("")
         logger.info("STEP 6: Cluster Visualization")
         logger.info("-" * 80)
+        if _resume and check_checkpoint_exists(outdir, 'visualization'):
+            logger.info(
+                f"  Checkpoint found, but missing methods: {viz_missing_methods} "
+                f"-- regenerating visualizations for all {len(cluster_methods)} methods"
+            )
         
         summary_outputs = export_cluster_topN_per_cluster(
             df_labeled=df_labeled,
