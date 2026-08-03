@@ -122,7 +122,7 @@ df_clustered, metadata = run_annotation_pipeline_with_resume(
 print(f"✅ Clustered {len(df_clustered):,} cells")
 ```
 
-For a guided, runnable walkthrough (including how to pick markers by inspecting your own CSV, and every normalization/sampling/DR/clustering option with its hyperparameters), see the `CONCLAVE_Phase1.ipynb` and `CONCLAVE_Phase1_Reference.ipynb` notebooks.
+For a guided, runnable walkthrough (including how to pick markers by inspecting your own CSV, and every normalization/sampling/DR/clustering option with its hyperparameters), see [`notebooks/CONCLAVE_Phase1.ipynb`](notebooks/CONCLAVE_Phase1.ipynb) and [`notebooks/CONCLAVE_Phase1_Reference.ipynb`](notebooks/CONCLAVE_Phase1_Reference.ipynb) in this repo.
 
 **Phase 1 Outputs:**
 ```
