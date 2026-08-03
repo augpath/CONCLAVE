@@ -1,56 +1,85 @@
-#!/usr/bin/env Rscript
-# CONCLAVE FlowSOM clustering script
-#
-# Contract expected by conclave.phase1.clustering.cluster_r_labels():
-#   1. Read the CSV at the path given as the first CLI argument.
-#   2. Add a "flowsom" column with integer cluster labels.
-#   3. Write the result back to the SAME path.
-#   4. Stay silent on stdout (only write to stderr on error).
-#
-# Requires the Bioconductor FlowSOM package:
-#   BiocManager::install("FlowSOM")
-#
-# Defaults below match the CONCLAVE manuscript's resubmission
-# (maxMeta=40, 10x10 SOM grid) -- see the parameter sensitivity sweep
-# in the supplementary materials.
+library(FlowSOM)
+library(magrittr)
+library(dplyr)
 
-suppressPackageStartupMessages({
-  library(FlowSOM)
-})
+# ---------------------------------------------------------------------------
+# flowsom_clustering.R  –  FlowSOM runner for the CONCLAVE pipeline
+#
+# Parameters (see function default below), also cross-checked against the
+# sensitivity analysis in the CONCLAVE manuscript's supplementary materials:
+#   maxMeta = 50   (cap on number of metaclusters)
+#   xdim    = 10   (SOM grid x dimension)
+#   ydim    = 10   (SOM grid y dimension)
+#
+# Not currently overridable from the Python side -- conclave's R bridge
+# (conclave.phase1.clustering._run_rscript) only passes the CSV path as a
+# CLI argument. To use different values, edit the defaults below directly.
+#
+# Usage: Rscript flowsom_clustering.R <input_csv>
+# ---------------------------------------------------------------------------
 
-args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 1) {
-  stop("Usage: Rscript flowsom_clustering.R <csv_path> [maxMeta] [xdim] [ydim] [seed]")
+path <- commandArgs(trailingOnly = TRUE)
+
+Fsom = function(path, maxMeta = 50L, xdim = 10L, ydim = 10L) {
+  
+  dataframe = read.csv(path, stringsAsFactors = FALSE)
+  
+  # Remove unnamed index columns added by Python/R
+  dataframe = dataframe[, !grepl("^X$|^Unnamed", colnames(dataframe))]
+  
+  # Strip non-marker columns before passing to FlowSOM. Filtering to
+  # numeric-only columns (rather than just excluding specific names) also
+  # correctly drops identifier columns like "cell_id" -- conclave's Python
+  # bridge (conclave.phase1.clustering.cluster_r_labels) always includes
+  # one, and leaving it in would make as.matrix() coerce the WHOLE matrix
+  # to character type (R matrices are homogeneous), which then breaks the
+  # left_join below with a type-mismatch error against the numeric
+  # original data.
+  if ('flowsom' %in% colnames(dataframe) & 'cellType' %in% colnames(dataframe)) {
+    df = dataframe %>% select(-flowsom, -cellType)
+  } else if ('cellType' %in% colnames(dataframe)) {
+    df = dataframe %>% select(-cellType)
+  } else if ('flowsom' %in% colnames(dataframe)) {
+    df = dataframe %>% select(-flowsom)
+  } else {
+    df = dataframe
+  }
+  df = df %>% select(where(is.numeric))
+  
+  df = df %>% as.matrix()
+  df = df %>% unique()
+  
+  # Guard: FlowSOM needs at least 50 rows
+  if (nrow(df) < 50) {
+    df <- df[rep(1:nrow(df), length.out = 50), , drop = FALSE]
+  }
+  
+  # Guard: maxMeta cannot exceed number of unique rows
+  effective_maxMeta <- min(maxMeta, nrow(df))
+  
+  # Guard: xdim * ydim must be >= effective_maxMeta
+  effective_xdim <- xdim
+  effective_ydim <- ydim
+  while (effective_xdim * effective_ydim < effective_maxMeta) {
+    effective_xdim <- effective_xdim + 1L
+    effective_ydim <- effective_ydim + 1L
+  }
+  
+  tmp_fsom = FlowSOM(
+    df,
+    colsToUse = colnames(df),
+    xdim      = effective_xdim,
+    ydim      = effective_ydim,
+    maxMeta   = effective_maxMeta
+  )
+  
+  flowsom = tmp_fsom$metaclustering[GetClusters(tmp_fsom)]
+  df      = df %>% cbind(flowsom)
+  
+  out = suppressMessages(dataframe %>% left_join(df %>% as.data.frame()))
+  
+  write.csv(out, path, row.names = FALSE)
+  return(path)
 }
-csv_path <- args[1]
-maxMeta  <- if (length(args) >= 2) as.integer(args[2]) else 40L
-xdim     <- if (length(args) >= 3) as.integer(args[3]) else 10L
-ydim     <- if (length(args) >= 4) as.integer(args[4]) else 10L
-seed     <- if (length(args) >= 5) as.integer(args[5]) else 42L
 
-set.seed(seed)
-
-df <- read.csv(csv_path, check.names = FALSE)
-
-# cluster_r_labels() passes a "cell_id" column plus one column per marker --
-# everything except cell_id is treated as a clustering feature.
-marker_cols <- setdiff(colnames(df), "cell_id")
-X <- as.matrix(df[, marker_cols, drop = FALSE])
-
-ff <- flowCore::flowFrame(X)
-
-fsom <- FlowSOM(
-  ff,
-  colsToUse = marker_cols,
-  xdim = xdim,
-  ydim = ydim,
-  nClus = maxMeta,
-  seed = seed
-)
-
-# Metaclustering (consensus hierarchical clustering on the SOM grid) up to maxMeta
-meta <- metaClustering_consensus(fsom$FlowSOM$map$codes, k = maxMeta, seed = seed)
-cluster_labels <- meta[fsom$FlowSOM$map$mapping[, 1]]
-
-df$flowsom <- as.integer(cluster_labels)
-write.csv(df, csv_path, row.names = FALSE)
+suppressMessages(cat(Fsom(path)))

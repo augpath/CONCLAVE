@@ -1,33 +1,42 @@
-#!/usr/bin/env Rscript
-# CONCLAVE DepecheR clustering script
-#
-# Contract expected by conclave.phase1.clustering.cluster_r_labels():
-#   1. Read the CSV at the path given as the first CLI argument.
-#   2. Add a "depeche" column with integer cluster labels.
-#   3. Write the result back to the SAME path.
-#   4. Stay silent on stdout (only write to stderr on error).
-#
-# Requires the Bioconductor DepecheR package:
-#   BiocManager::install("DepecheR")
+library(DepecheR)
+library(magrittr)
+library(dplyr)
 
-suppressPackageStartupMessages({
-  library(DepecheR)
-})
+# ---------------------------------------------------------------------------
+# depeche_clustering.R  -  DepecheR runner for the CONCLAVE pipeline
+#
+# Usage: Rscript depeche_clustering.R <input_csv>
+#
+# Not currently overridable from the Python side -- conclave's R bridge
+# (conclave.phase1.clustering._run_rscript) only passes the CSV path as a
+# CLI argument.
+# ---------------------------------------------------------------------------
 
-args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 1) {
-  stop("Usage: Rscript depeche_clustering.R <csv_path> [seed]")
+path <- commandArgs(trailingOnly = TRUE)
+
+Depech = function(path) {
+  dataframe = read.csv(path, stringsAsFactors = FALSE)
+
+  df = dataframe %>%
+    select(where(is.numeric)) %>%
+    select(-any_of(c("depeche", "cellType", "UMAP_1", "UMAP_2", "dr1", "dr2"))) %>%
+    unique()
+
+  result <- depeche(df %>% as.matrix())
+
+  # Map cluster labels back onto every original row (including any rows
+  # that were removed as duplicates above) by matching on shared marker
+  # columns -- mirrors flowsom_clustering.R's join pattern. Directly
+  # mutating dataframe with result$clusterVector (the previous approach)
+  # silently assumed row-for-row alignment between the deduplicated
+  # clustering input and the full original data, which breaks (errors, or
+  # in older dplyr versions, silently misassigns labels) whenever any
+  # duplicate marker rows exist.
+  df = df %>% cbind(depeche = result$clusterVector)
+  out = suppressMessages(dataframe %>% left_join(df %>% as.data.frame()))
+
+  write.csv(out, path, row.names = FALSE)
+  return(path)
 }
-csv_path <- args[1]
-seed     <- if (length(args) >= 2) as.integer(args[2]) else 42L
 
-set.seed(seed)
-
-df <- read.csv(csv_path, check.names = FALSE)
-marker_cols <- setdiff(colnames(df), "cell_id")
-X <- as.matrix(df[, marker_cols, drop = FALSE])
-
-result <- depeche(X, maxIter = 100)
-
-df$depeche <- as.integer(result$clusterVector)
-write.csv(df, csv_path, row.names = FALSE)
+cat(Depech(path))
