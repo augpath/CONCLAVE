@@ -1,4 +1,4 @@
-# CONCLAVE: CONsensus CLustering with Annotation-Validation Extrapolation for cyclic multiplexed immunofluorescence data
+# CONCLAVE: CONsensus CLustering with Annotation-Validation Extrapolation for spatial proteomics data
 
 [![PyPI version](https://badge.fury.io/py/conclave.svg)](https://badge.fury.io/py/conclave)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
