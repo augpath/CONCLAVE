@@ -160,7 +160,7 @@ def _run_rscript(script_path, csv_path):
         return csv_path
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr if e.stderr else e.stdout
-        raise RuntimeError(f"R script failed:\\n{error_msg}")
+        raise RuntimeError(f"R script failed:\n{error_msg}")
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"R script timed out after 600s")
 
