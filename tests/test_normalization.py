@@ -33,6 +33,55 @@ def test_minmax_output_in_unit_range(small_df, markers):
     assert out[markers].max().max() <= 1 + 1e-9
 
 
+def test_iqr_zscore_output_is_finite_and_roughly_centered(small_df, markers):
+    out, report = normalize_markers(small_df, markers, method="iqr-zscore")
+    vals = out[markers].values
+    assert np.isfinite(vals).all()
+    # Winsorization + standardizing on the same (winsorized) data means the
+    # mean should land close to 0, though not exactly (fences remove tails
+    # asymmetrically in general)
+    assert abs(vals.mean()) < 0.5
+    assert report["method"] == "iqr-zscore"
+
+
+def test_iqr_minmax_output_in_unit_range(small_df, markers):
+    out, _ = normalize_markers(small_df, markers, method="iqr-minmax")
+    assert out[markers].min().min() >= -1e-9
+    assert out[markers].max().max() <= 1 + 1e-9
+
+
+def test_iqr_methods_accept_underscore_and_dash_spelling(small_df, markers):
+    out_dash, _ = normalize_markers(small_df, markers, method="iqr-zscore")
+    out_underscore, _ = normalize_markers(small_df, markers, method="iqr_zscore")
+    assert np.allclose(out_dash[markers].values, out_underscore[markers].values)
+
+
+def test_iqr_zscore_winsorizes_outliers_before_standardizing(markers):
+    """A single extreme outlier shouldn't dominate the scale the way plain
+    z-score would -- the Tukey-fence Winsorization should cap its influence
+    before standardizing."""
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame(rng.normal(size=(200, len(markers))), columns=markers)
+    df.iloc[0] = 1000.0  # extreme outlier row
+
+    out_plain, _ = normalize_markers(df, markers, method="z-score", clip=None)
+    out_iqr, _ = normalize_markers(df, markers, method="iqr-zscore")
+
+    # Without Winsorization, the plain z-score of the other 199 (normal)
+    # points gets compressed toward 0 because std is inflated by the outlier
+    non_outlier_std_plain = out_plain[markers].values[1:].std()
+    non_outlier_std_iqr = out_iqr[markers].values[1:].std()
+    assert non_outlier_std_iqr > non_outlier_std_plain
+
+
+def test_iqr_minmax_constant_marker_after_winsorization_is_flagged(small_df, markers):
+    df = small_df.copy()
+    df["Ki67"] = 7.0  # constant column
+    out, report = normalize_markers(df, markers, method="iqr-minmax")
+    assert np.allclose(out["Ki67"].values, 0.0)
+    assert len(report["normalization_issues"]["samples_with_constant_markers"]) == 1
+
+
 def test_none_method_returns_raw_values(small_df, markers):
     out, report = normalize_markers(small_df, markers, method=None)
     assert np.allclose(out[markers].values, small_df[markers].values)

@@ -29,7 +29,15 @@ def normalize_markers(
     markers : list
         Marker column names to normalize
     method : str, default="z-score"
-        Normalization method: "z-score", "lognorm", "minmax", or None
+        Normalization method: "z-score", "lognorm", "minmax", "iqr-zscore",
+        "iqr-minmax", or None.
+        - "z-score": standardize, then clip to +/-`clip`
+        - "lognorm": per-cell total-count normalize to `scale`, then log1p
+        - "minmax": winsorize to [1-`q`, `q`] quantiles, then rescale to [0,1]
+        - "iqr-zscore": Tukey-fence Winsorize (Q1-1.5*IQR, Q3+1.5*IQR), then
+          standardize. No additional clipping after z-scoring.
+        - "iqr-minmax": Tukey-fence Winsorize (same fences as iqr-zscore),
+          then rescale to [0,1] using the Winsorized min/max.
     sample_cols : list of str, optional
         Columns defining sample groups (e.g., ["slide_id", "scene_id"]).
         If None or empty, treats entire dataset as single sample.
@@ -165,10 +173,60 @@ def normalize_markers(
             Z = ((Xw - mn) / rng).fillna(0.0)
             normalized_values.loc[sample_indices] = Z.values
         
+        # IQR-based Z-score (Tukey fences -> Winsorize -> standardize)
+        elif method_str in ("iqrzscore", "iqrz"):
+            Q1 = X_sample.quantile(0.25, axis=0)
+            Q3 = X_sample.quantile(0.75, axis=0)
+            IQR = Q3 - Q1
+            lower_fence = Q1 - 1.5 * IQR
+            upper_fence = Q3 + 1.5 * IQR
+            Xw = X_sample.clip(lower=lower_fence, upper=upper_fence, axis=1)
+            
+            mu = Xw.mean(axis=0, skipna=True)
+            sd = Xw.std(axis=0, skipna=True)
+            
+            constant_markers = sd[sd <= 1e-12].index.tolist()
+            if constant_markers:
+                issues['samples_with_constant_markers'].append({
+                    'sample_id': str(sample_id),
+                    'n_cells': int(n_cells),
+                    'constant_markers': constant_markers
+                })
+            
+            sd = sd.replace(0, np.nan)
+            Z = ((Xw - mu) / sd).fillna(0.0)
+            # No additional clipping after z-scoring (Winsorization above
+            # already bounded the influence of outliers)
+            normalized_values.loc[sample_indices] = Z.values
+        
+        # IQR-based Min-Max (Tukey fences -> Winsorize -> rescale to [0, 1])
+        elif method_str in ("iqrminmax",):
+            Q1 = X_sample.quantile(0.25, axis=0)
+            Q3 = X_sample.quantile(0.75, axis=0)
+            IQR = Q3 - Q1
+            lower_fence = Q1 - 1.5 * IQR
+            upper_fence = Q3 + 1.5 * IQR
+            Xw = X_sample.clip(lower=lower_fence, upper=upper_fence, axis=1)
+            
+            col_min = Xw.min(axis=0)
+            col_max = Xw.max(axis=0)
+            
+            constant_markers = (col_max - col_min)[(col_max - col_min) <= 1e-12].index.tolist()
+            if constant_markers:
+                issues['samples_with_constant_markers'].append({
+                    'sample_id': str(sample_id),
+                    'n_cells': int(n_cells),
+                    'constant_markers': constant_markers
+                })
+            
+            col_range = (col_max - col_min).replace(0, np.nan)
+            Z = ((Xw - col_min) / col_range).fillna(0.0)
+            normalized_values.loc[sample_indices] = Z.values
+        
         else:
             raise ValueError(
                 f"Unknown normalization method: '{method}'. "
-                f"Choose from: None, z-score, lognorm, minmax"
+                f"Choose from: None, z-score, lognorm, minmax, iqr-zscore, iqr-minmax"
             )
         
         # Check for high NaN rate

@@ -120,14 +120,20 @@ For a guided, runnable walkthrough (including how to pick markers by inspecting 
 **Phase 1 Outputs:**
 ```
 output_phase1/
+├── .checkpoint_*.json                (resume support -- safe to ignore/delete)
 ├── 00_sanitycheck/
 │   ├── sanity_report.json
 │   └── normalization_report.json
 ├── 01_normalized_full.csv
 ├── 02_sampled_full.csv
-├── 02_dr/dr_matrix.csv             (if dr_method was set)
+├── 02_dr/
+│   ├── dr_matrix.csv                 (if dr_method was set)
+│   └── dr_info.csv
 ├── 03_clustering_annotation/
-│   └── clustered_subset_with_labels_on_sampled.csv
+│   ├── clustered_subset_with_labels_on_sampled.csv
+│   ├── meta_cluster_summary.csv
+│   ├── meta_run.json
+│   └── labels/labels_<method>.csv    (one file per clustering method)
 ├── 04_cluster_heatmaps/
 │   ├── heatmap_topN_ranked_<method>.png
 │   ├── annotation_template_<method>.csv  ← Annotate these!
