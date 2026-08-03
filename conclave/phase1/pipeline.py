@@ -255,8 +255,13 @@ def run_annotation_pipeline(
         logger.info(f"  DR method: {dr_info.get('dr_method')}")
         logger.info(f"  Loaded matrix: {X_dr_df.shape}")
         
-        # Determine feature columns
-        if dr_info.get('dr_method') is None:
+        # Determine feature columns. NOTE: dr_info was round-tripped through
+        # CSV (see dr_info.csv save below), which turns a Python None into
+        # an empty cell that pandas reads back as float NaN, NOT None --
+        # so "dr_info.get('dr_method') is None" would incorrectly be False
+        # here even when no DR method was used. pd.isna() handles both.
+        dr_method_loaded = dr_info.get('dr_method')
+        if pd.isna(dr_method_loaded):
             dr_cols = clustering_markers  # Use subset for clustering
             X_for_clustering = X_dr_df[clustering_markers].copy()  # Use subset
         else:
@@ -264,7 +269,7 @@ def run_annotation_pipeline(
             X_for_clustering = X_dr_df[dr_cols].copy()
         
         # Create X_dr for compatibility
-        if dr_info.get('dr_method') is None:
+        if pd.isna(dr_method_loaded):
             X_dr = X_dr_df[markers].values
         else:
             X_dr = X_dr_df[dr_cols].values

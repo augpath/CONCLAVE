@@ -42,3 +42,27 @@ def test_dr_tsne_caps_at_three_components(small_df, markers):
 def test_dr_unknown_method_raises(small_df, markers):
     with pytest.raises(ValueError):
         run_dr(small_df, markers, method="not-a-real-method")
+
+
+def test_dr_none_method_survives_csv_roundtrip_as_nan(small_df, markers, tmp_path):
+    """Regression test for a real bug found via a user's crashed-then-resumed
+    pipeline run: dr_info's dr_method=None gets written to a CSV checkpoint
+    as an empty cell, which pandas reads back as float NaN, not None. Code
+    checking `dr_info.get('dr_method') is None` after a CSV round-trip would
+    incorrectly treat a "no DR" run as if a real DR method had been used,
+    ending up with zero clustering feature columns. This pins the pd.isna()
+    based fix in conclave/phase1/pipeline.py's resume path."""
+    import pandas as pd
+
+    _, info = run_dr(small_df, markers, method=None)
+    assert info["dr_method"] is None
+
+    csv_path = tmp_path / "dr_info.csv"
+    pd.DataFrame([info]).to_csv(csv_path, index=False)
+    reloaded = pd.read_csv(csv_path).iloc[0].to_dict()
+
+    # This is the exact footgun: it's NaN after the round-trip, not None
+    assert reloaded["dr_method"] is not None
+    assert pd.isna(reloaded["dr_method"])
+    # ...which is exactly why the pipeline's resume-path check must use
+    # pd.isna() rather than "is None" -- see pipeline.py
