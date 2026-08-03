@@ -10,9 +10,9 @@ A comprehensive Python package for single-cell data analysis featuring multi-met
 
 ### Phase 1: Multi-Method Clustering
 - ✅ **10 native Python clustering algorithms**: PhenoGraph, K-means, MiniBatchKMeans, Leiden, Agglomerative, BIRCH, Affinity Propagation, MeanShift, DBSCAN, Spectral
-- ✅ **2 R-based algorithms**: FlowSOM, DepecheR (require R + those packages installed; reference scripts in `conclave/r_scripts/`)
+- ✅ **2 R-based algorithms**: FlowSOM, DepecheR (require R + those packages installed; scripts ship with the package, path auto-detected — see Quick Start)
 - ✅ **5 dimensionality-reduction options**: None (raw marker space), PCA, UMAP, PaCMAP, t-SNE
-- ✅ **4 normalization methods**: None, z-score, log-normalize, min-max (quantile-winsorized), each optionally computed per-sample or pooled
+- ✅ **6 normalization methods**: None, z-score, log-normalize, min-max, IQR-based z-score, IQR-based min-max (Tukey-fence outlier handling), each optionally computed per-sample or pooled
 - ✅ **GPU acceleration**: 10-100x faster with NVIDIA RAPIDS (optional)
 - ✅ **Multi-sample support**: Batch-aware normalization
 - ✅ **Quality checks**: Automated validation and visualization
@@ -98,18 +98,25 @@ df = pd.read_csv("your_data.csv")
 # Define the markers to cluster on
 markers = ["CD3", "CD4", "CD8", "CD20", "CD45"]  # replace with your panel
 
+# Optional: use FlowSOM/DepecheR (need R + those R packages installed separately;
+# path to the bundled scripts is auto-detected, no copy-pasting needed)
+import conclave.r_scripts, pathlib
+r_scripts_dir = pathlib.Path(conclave.r_scripts.__file__).parent
+
 # Run Phase 1 clustering
 df_clustered, metadata = run_annotation_pipeline_with_resume(
     df=df,
     markers=markers,
     outdir="./output_phase1",
     sample_cols=["sample_id"],   # column identifying slide/sample, for batch-aware normalization; None to pool all cells
-    normalization="z-score",
+    normalization="z-score",     # or "iqr-zscore" / "iqr-minmax" for outlier-robust alternatives
     sampling="stratified-notproportional",
     sample_size=20000,
-    cluster_methods=("phenograph", "kmeans"),  # add "flowsom"/"depeche" if you have R + those packages set up (see conclave/r_scripts/)
+    cluster_methods=("phenograph", "kmeans"),  # add "flowsom"/"depeche" if you have R + those packages installed
     phenograph_k=25,
     derive_kmeans_from="phenograph",
+    flowsom_rscript=str(r_scripts_dir / "flowsom_clustering.R"),   # only used if "flowsom" is in cluster_methods
+    depeche_rscript=str(r_scripts_dir / "depeche_clustering.R"),   # only used if "depeche" is in cluster_methods
 )
 
 print(f"✅ Clustered {len(df_clustered):,} cells")
