@@ -11,6 +11,12 @@
   each hyperparameter explained. Use this to decide what to actually use in the
   notebook above, not as a run-and-forget pipeline.
 
+- **`CONCLAVE_Phase2.ipynb`** — run Phase 2 (consensus voting across your annotated
+  methods → 3D UMAP + KNN projection onto the full dataset → disagreement/confidence/
+  JSD flagging → ~16 diagnostic plots) once you've filled in Phase 1's annotation
+  templates by hand. Includes a validation step that catches mismatched cluster IDs
+  and blank annotations before committing to the (multi-minute) run.
+
 Both require R + the FlowSOM/DepecheR R packages installed separately if you want
 to use those two clustering methods — see `conclave/r_scripts/` for the bundled
 scripts (path auto-detected in the notebooks, no copy-pasting needed).
