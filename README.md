@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A comprehensive Python package for single-cell data analysis featuring multi-method clustering, consensus labeling, and automated quality assessment.
-
+![Logo](CONCLAVE_logo.png)
 ## Features
 
 ### Phase 1: Multi-Method Clustering
