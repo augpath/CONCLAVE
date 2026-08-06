@@ -26,11 +26,6 @@ A comprehensive Python package for single-cell data analysis featuring multi-met
 
 ## Installation
 
-> **⚠️ Not yet on PyPI.** `conclave` is already taken by an unrelated project
-> (a Bitcoin-network client), so this package will need a different
-> distribution name before publishing — `pip install conclave` will NOT
-> install this package. Until then, install from GitHub:
-
 ### Quick Install (from GitHub)
 
 ```bash
@@ -160,7 +155,7 @@ After manually annotating clusters using the templates from Phase 1 (fill in the
 > data/markers/paths as function arguments — it reads them from module-level
 > variables in `conclave.phase2.pipeline_complete`. This also means
 > `import conclave` currently creates `./output_phase2/` on disk using
-> default settings tuned for the CONCLAVE manuscript's melanoma panel. This
+> default settings. This
 > is a known issue slated for a proper kwargs-based refactor; until then,
 > **every** variable below needs setting — several (`CLUSTERED_FILE`,
 > `FULL_DATA_FILE`, `ANNOTATION_FILES`) are derived once from the defaults
@@ -339,10 +334,6 @@ See [CHANGELOG.md](https://github.com/augpath/CONCLAVE/blob/main/CHANGELOG.md) f
 
 ## Acknowledgments
 
-Developed by the CONCLAVE Development Team.
-
 Special thanks to:
 - RAPIDS AI team for cuML
-- UMAP developers
-- PhenoGraph developers
 - All contributors
