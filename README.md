@@ -313,13 +313,6 @@ If you use CONCLAVE in your research, please cite:
 
 MIT License - see [LICENSE](https://github.com/augpath/CONCLAVE/blob/main/LICENSE) file
 
-## Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
-
 See [CONTRIBUTING.md](https://github.com/augpath/CONCLAVE/blob/main/CONTRIBUTING.md) for details.
 
 ## Support
