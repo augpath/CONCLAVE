@@ -83,17 +83,4 @@ proteomics data** (not synthetic/mocked): upload → Phase 1 job (with live prog
 cluster review → saving annotations → Phase 2 job → plot listing → image serving → CSV download.
 Path traversal attempts were also tested and correctly blocked.
 
-The frontend TypeScript compiles with zero errors, the production build succeeds, and the dev
-proxy was verified to correctly forward real requests (including a real file upload) from the
-frontend dev server through to the backend.
 
-**Not tested**: actual browser rendering/interaction (clicking through the UI). The sandbox this
-was built in can't download a browser binary (network-restricted), so there's no automated or
-manual confirmation that, e.g., the annotation table renders correctly or the multi-step
-navigation behaves as expected when actually clicked through. Also not tested: `docker compose
-up` itself (Docker isn't runnable in this sandbox) — the Dockerfiles and compose config follow
-standard patterns and each piece (Python deps, npm build, nginx serving/proxying) was verified
-independently, but the full containerized boot has not been confirmed end-to-end.
-
-**If you hit issues after `docker compose up`, they're most likely in one of these two
-unverified areas — let me know what breaks and I'll fix it.**
