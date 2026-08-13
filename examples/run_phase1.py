@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from conclave.phase1 import run_annotation_pipeline_with_resume
+import conclave.r_scripts
 
 SCRIPT_DIR = Path(__file__).parent
 CSV_PATH = SCRIPT_DIR / "Melanoma_example.csv"
@@ -24,11 +25,31 @@ MARKERS = [
     'CD79a', 'CD68', 'CD3', 'CD4', 'CD27', 'PRDM1', 'MELANA', 'S100B',
 ]
 
+# ⚙️ config -- edit these to change what Phase 1 runs
+CLUSTER_METHODS = ["phenograph", "kmeans"]
+
+# FlowSOM and DepecheR ship with the package as R scripts -- their path is
+# auto-detected below, no copy-pasting needed. You still need R itself,
+# plus the FlowSOM/DepecheR R packages, installed separately. Both are
+# opt-in (flip these to True) so nothing breaks if you don't have R set up.
+USE_FLOWSOM = False
+USE_DEPECHE = False
+
+R_SCRIPTS_DIR = Path(conclave.r_scripts.__file__).parent
+FLOWSOM_RSCRIPT = str(R_SCRIPTS_DIR / "flowsom_clustering.R")  # override with your own path if needed
+DEPECHE_RSCRIPT = str(R_SCRIPTS_DIR / "depeche_clustering.R")  # override with your own path if needed
+
+if USE_FLOWSOM:
+    CLUSTER_METHODS.append("flowsom")
+if USE_DEPECHE:
+    CLUSTER_METHODS.append("depeche")
+
 
 def main():
     print(f"Loading {CSV_PATH} ...")
     df = pd.read_csv(CSV_PATH)
     print(f"Loaded {len(df):,} cells x {df.shape[1]} columns")
+    print(f"Cluster methods: {CLUSTER_METHODS}")
 
     df_clustered, metadata = run_annotation_pipeline_with_resume(
         df=df,
@@ -38,9 +59,11 @@ def main():
         normalization="z-score",
         sampling="stratified-notproportional",
         sample_size=20000,
-        cluster_methods=("phenograph", "kmeans"),
+        cluster_methods=tuple(CLUSTER_METHODS),
         phenograph_k=25,
         derive_kmeans_from="phenograph",
+        flowsom_rscript=FLOWSOM_RSCRIPT if USE_FLOWSOM else None,
+        depeche_rscript=DEPECHE_RSCRIPT if USE_DEPECHE else None,
     )
 
     print()
