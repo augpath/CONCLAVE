@@ -45,8 +45,7 @@ def test_dr_unknown_method_raises(small_df, markers):
 
 
 def test_dr_none_method_survives_csv_roundtrip_as_nan(small_df, markers, tmp_path):
-    """Regression test for a real bug found via a user's crashed-then-resumed
-    pipeline run: dr_info's dr_method=None gets written to a CSV checkpoint
+    """Regression test for a checkpoint-resume bug: dr_info's dr_method=None gets written to a CSV checkpoint
     as an empty cell, which pandas reads back as float NaN, not None. Code
     checking `dr_info.get('dr_method') is None` after a CSV round-trip would
     incorrectly treat a "no DR" run as if a real DR method had been used,

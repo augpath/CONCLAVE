@@ -1,4 +1,4 @@
-"""Regression test for a real bug found via user testing: resuming a Phase 1
+"""Regression test for a checkpoint-resume bug: resuming a Phase 1
 run (after an earlier crash mid-clustering) with dr_method=None used to fail
 with "No clustering features after removing cell_id" -- see test_dr.py's
 test_dr_none_method_survives_csv_roundtrip_as_nan for the root-cause
@@ -45,7 +45,7 @@ def test_resume_after_crash_with_dr_method_none(small_df, markers, tmp_path):
 
 
 def test_resume_regenerates_visualizations_for_newly_added_method(small_df, markers, tmp_path):
-    """Regression test for a real bug found via user testing: after a
+    """Regression test for a checkpoint-resume bug: after a
     successful run with methods A+B, adding method C to cluster_methods and
     resuming correctly re-ran clustering for C (Step 5 already checked
     per-method), but Step 6 (heatmaps/annotation templates) only checked
