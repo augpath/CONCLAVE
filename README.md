@@ -119,6 +119,12 @@ print(f"✅ Clustered {len(df_clustered):,} cells")
 
 For a guided, runnable walkthrough (including how to pick markers by inspecting your own CSV, and every normalization/sampling/DR/clustering option with its hyperparameters), see [`notebooks/CONCLAVE_Phase1.ipynb`](notebooks/CONCLAVE_Phase1.ipynb) and [`notebooks/CONCLAVE_Phase1_Reference.ipynb`](notebooks/CONCLAVE_Phase1_Reference.ipynb) in this repo. For Phase 2, see [`notebooks/CONCLAVE_Phase2.ipynb`](notebooks/CONCLAVE_Phase2.ipynb), which includes pre-flight validation of your annotation files.
 
+Prefer plain scripts over notebooks? See [`examples/`](examples/): `run_phase1.py`, `run_phase2.py`
+(auto-generates placeholder annotations if you haven't annotated yet, so it's runnable
+end-to-end out of the box — clearly not real biology, just for seeing the pipeline run), and
+`run_full_pipeline.py` (chains both). Includes a real 71MB sample dataset
+(`Melanoma_example.csv`) to try them against immediately.
+
 **Phase 1 Outputs:**
 ```
 output_phase1/

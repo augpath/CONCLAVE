@@ -46,5 +46,8 @@ output*/
 
 # Data files
 *.csv
+# Exception: this is a real example dataset, intentionally committed
+# (see examples/README or the main README's "examples/" section)
+!examples/Melanoma_example.csv
 *.h5
 *.hdf5
