@@ -149,58 +149,51 @@ output_phase1/
 ### Phase 2: Consensus & Projection
 
 After manually annotating clusters using the templates from Phase 1 (fill in the
-`annotation` column of each `annotation_template_<method>.csv` and save it):
-
-> **⚠️ Current limitation:** `run_phase2_complete()` does not yet accept your
-> data/markers/paths as function arguments — it reads them from module-level
-> variables in `conclave.phase2.pipeline_complete`. This also means
-> `import conclave` currently creates `./output_phase2/` on disk using
-> default settings. This
-> is a known issue slated for a proper kwargs-based refactor; until then,
-> **every** variable below needs setting — several (`CLUSTERED_FILE`,
-> `FULL_DATA_FILE`, `ANNOTATION_FILES`) are derived once from the defaults
-> at import time and won't update just by changing `PHASE1_OUTPUT` /
-> `ANNOTATIONS_DIR` afterward:
+`annotation` column of each `annotation_template_<method>.csv` and save it, one file per
+method, e.g. `phenograph_annotated.csv`):
 
 ```python
-from pathlib import Path
-import conclave.phase2.pipeline_complete as p2
+from conclave.phase2.pipeline_complete import run_phase2_complete
 
-phase1_out = Path("./output_phase1")
-phase2_out = Path("./output_phase2")
-annotations_dir = Path("./annotations")  # your filled-in annotation_template_<method>.csv files, renamed/copied here
-
-p2.PHASE1_OUTPUT = phase1_out
-p2.PHASE2_OUTPUT = phase2_out
-p2.ANNOTATIONS_DIR = annotations_dir
-
-# Derived paths -- must be set explicitly, they do NOT auto-update above
-p2.CLUSTERED_FILE = phase1_out / "03_clustering_annotation" / "clustered_subset_with_labels_on_sampled.csv"
-p2.FULL_DATA_FILE = phase1_out / "01_normalized_full.csv"
-p2.ANNOTATION_FILES = {
-    "phenograph": annotations_dir / "phenograph_annotated.csv",
-    "kmeans": annotations_dir / "kmeans_annotated.csv",
-    # one entry per method you ran in Phase 1
-}
-
-p2.MARKERS = markers  # same marker list used in Phase 1
-p2.CONSENSUS_METHODS = ["phenograph", "kmeans"]  # match what you ran in Phase 1
-p2.KNN_K = 25
-p2.SAMPLE_COLS = ["sample_id"]  # match what you used in Phase 1
-
-# Output dirs are created at import time using the OLD default path --
-# recreate them at your actual PHASE2_OUTPUT location
-p2.PHASE2_OUTPUT.mkdir(parents=True, exist_ok=True)
-(p2.PHASE2_OUTPUT / "templates").mkdir(exist_ok=True)
-(p2.PHASE2_OUTPUT / "plots").mkdir(exist_ok=True)
-
-df_labeled, template, single_templates, report = p2.run_phase2_complete()
+df_labeled, template, single_templates, report = run_phase2_complete(
+    phase1_output="./output_phase1",       # optional -- defaults shown
+    phase2_output="./output_phase2",       # optional
+    annotations_dir="./annotations",       # optional -- your filled-in *_annotated.csv files
+    consensus_methods=["phenograph", "kmeans"],  # match what you ran in Phase 1
+    knn_k=25,
+    # markers not passed -- auto-loaded from output_phase1/pipeline_run_config.json,
+    # so Phase 2 automatically uses the same markers Phase 1 was run with
+)
 
 print(f"✅ Labeled {len(df_labeled):,} cells")
 print(f"Consensus confidence: {df_labeled['confidence_score'].mean():.3f}")
 ```
 
-This full sequence has been verified end-to-end against real data.
+All paths are optional and independently overridable — point `phase1_output`/`annotations_dir`
+anywhere your files actually live, no need to follow the default layout. `markers` is also
+optional: if omitted, it's auto-detected from Phase 1's own `pipeline_run_config.json` (falling
+back to a module-level default only if that file isn't found), so Phase 2 can't silently drift
+from the marker panel Phase 1 actually used. Pass `markers=[...]` explicitly if you want to
+override that.
+
+<details>
+<summary>Older module-attribute pattern (still supported, for existing code)</summary>
+
+```python
+import conclave.phase2.pipeline_complete as p2
+
+p2.PHASE1_OUTPUT = "./output_phase1"
+p2.PHASE2_OUTPUT = "./output_phase2"
+p2.ANNOTATIONS_DIR = "./annotations"
+p2.CONSENSUS_METHODS = ["phenograph", "kmeans"]
+p2.KNN_K = 25
+
+df_labeled, template, single_templates, report = p2.run_phase2_complete()
+```
+
+This still works exactly as before — kept for backward compatibility — but the function-argument
+form above is recommended for new code.
+</details>
 
 **Phase 2 Outputs:**
 ```

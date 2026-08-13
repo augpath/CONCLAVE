@@ -101,24 +101,32 @@ KNN_K = 25
 SAMPLE_COLS = ['ID']
 USE_GPU = GPU_AVAILABLE
 
-# Create directories
-PHASE2_OUTPUT.mkdir(parents=True, exist_ok=True)
-(PHASE2_OUTPUT / "templates").mkdir(exist_ok=True)
-(PHASE2_OUTPUT / "plots").mkdir(exist_ok=True)
-
-print("="*80)
-print("CONFIGURATION")
-print("="*80)
-print(f"GPU: {'ENABLED' if USE_GPU else 'DISABLED'}")
-print(f"Methods: {', '.join(CONSENSUS_METHODS)}")
-print(f"Template: max {TEMPLATE_MAX_PER_LABEL} cells/label")
-print(f"KNN: K={KNN_K}")
-print("="*80)
+# NOTE: directory creation and the CONFIGURATION printout used to happen
+# here, at import time -- meaning `import conclave` alone created
+# ./output_phase2/ on disk using these defaults, before anyone called
+# run_phase2_complete(). Both now happen inside the function itself, using
+# whatever values were actually resolved for that call (explicit
+# arguments, or these module defaults as a fallback) -- see
+# run_phase2_complete()'s opening lines.
 
 
 ################################################################################
 # HELPER FUNCTIONS
 ################################################################################
+
+def _load_phase1_config(phase1_output: Path):
+    """Read Phase 1's own pipeline_run_config.json, if present. Returns the
+    parsed dict, or None if Phase 1 wasn't run through the package's own
+    run_annotation_pipeline() (e.g. an older run, or a hand-built input
+    directory) and so never wrote this file."""
+    config_path = Path(phase1_output) / "pipeline_run_config.json"
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path) as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 def compute_full_disagreement(df, methods):
     """
@@ -320,9 +328,170 @@ def compute_jsd_comprehensive(df, methods):
 # MAIN PIPELINE
 ################################################################################
 
-def run_phase2_complete():
-    """Complete Phase 2 pipeline with all features"""
-    
+def run_phase2_complete(
+    phase1_output=None,
+    phase2_output=None,
+    annotations_dir=None,
+    clustered_file=None,
+    full_data_file=None,
+    annotation_files=None,
+    markers=None,
+    sample_cols=None,
+    consensus_methods=None,
+    min_votes=None,
+    template_max_per_label=None,
+    knn_k=None,
+    umap_n_neighbors=None,
+    umap_min_dist=None,
+    umap_seed=None,
+    use_gpu=None,
+):
+    """Complete Phase 2 pipeline with all features.
+
+    Every argument is optional. Omit any of them to fall back to the
+    module-level default (`conclave.phase2.pipeline_complete.PHASE1_OUTPUT`,
+    etc.) -- this preserves the older "set the module attribute, then call
+    with no arguments" pattern, so existing code keeps working.
+
+    Two arguments get an extra layer of auto-detection when omitted:
+
+    - `markers`: if not given, first tries to auto-load the marker list
+      from `phase1_output/pipeline_run_config.json` (written automatically
+      by `run_annotation_pipeline()`) -- so Phase 2 uses the *same* markers
+      Phase 1 was actually run with, rather than requiring you to retype
+      them and risk a silent mismatch. Falls back to the module-level
+      `MARKERS` default only if that config file isn't found.
+    - `sample_cols`: same auto-detection, from the same config file.
+
+    Parameters
+    ----------
+    phase1_output, phase2_output : path-like, optional
+        Where Phase 1's outputs live, and where Phase 2 should write its
+        own outputs.
+    annotations_dir : path-like, optional
+        Folder containing your filled-in `<method>_annotated.csv` files.
+    clustered_file, full_data_file : path-like, optional
+        Override the specific Phase 1 output files Phase 2 reads, if your
+        layout differs from the standard `run_annotation_pipeline()` output
+        structure.
+    annotation_files : dict[str, path-like], optional
+        Explicit {method: path} mapping, if it doesn't follow the
+        `annotations_dir/<method>_annotated.csv` convention.
+    markers : list[str], optional
+        See auto-detection note above.
+    sample_cols : list[str], optional
+        See auto-detection note above.
+    consensus_methods, min_votes, template_max_per_label, knn_k,
+    umap_n_neighbors, umap_min_dist, umap_seed, use_gpu :
+        Same meaning as the module-level defaults of the same name
+        (uppercased), used as the fallback when not given here.
+    """
+    # ---- Capture module-level defaults up front, via globals() ---------
+    # (NOT bare names like `MIN_VOTES` -- since this function assigns
+    # MIN_VOTES/etc. further down to rebind them for the rest of the
+    # function body, Python treats those as local to the whole function
+    # scope from the top, so reading the bare name here would raise
+    # UnboundLocalError. globals() always reads the real module namespace
+    # regardless of that local shadowing.)
+    _g = globals()
+    _default_phase1_output = _g['PHASE1_OUTPUT']
+    _default_phase2_output = _g['PHASE2_OUTPUT']
+    _default_annotations_dir = _g['ANNOTATIONS_DIR']
+    _default_clustered_file = _g['CLUSTERED_FILE']
+    _default_full_data_file = _g['FULL_DATA_FILE']
+    _default_markers = _g['MARKERS']
+    _default_sample_cols = _g['SAMPLE_COLS']
+    _default_consensus_methods = _g['CONSENSUS_METHODS']
+    _default_min_votes = _g['MIN_VOTES']
+    _default_template_max_per_label = _g['TEMPLATE_MAX_PER_LABEL']
+    _default_knn_k = _g['KNN_K']
+    _default_umap_n_neighbors = _g['UMAP_N_NEIGHBORS']
+    _default_umap_min_dist = _g['UMAP_MIN_DIST']
+    _default_umap_seed = _g['UMAP_SEED']
+    _default_use_gpu = _g['USE_GPU']
+
+    # ---- Resolve paths -----------------------------------------------
+    phase1_output = Path(phase1_output) if phase1_output is not None else Path(_default_phase1_output)
+    phase2_output = Path(phase2_output) if phase2_output is not None else Path(_default_phase2_output)
+    annotations_dir = Path(annotations_dir) if annotations_dir is not None else Path(_default_annotations_dir)
+    clustered_file = Path(clustered_file) if clustered_file is not None else (
+        phase1_output / "03_clustering_annotation" / "clustered_subset_with_labels_on_sampled.csv"
+        if phase1_output != Path(_default_phase1_output)
+        else Path(_default_clustered_file)
+    )
+    full_data_file = Path(full_data_file) if full_data_file is not None else (
+        phase1_output / "01_normalized_full.csv"
+        if phase1_output != Path(_default_phase1_output)
+        else Path(_default_full_data_file)
+    )
+
+    # ---- Resolve markers / sample_cols, with Phase 1 config auto-detection ----
+    phase1_config = _load_phase1_config(phase1_output)
+    if markers is None:
+        if phase1_config is not None and phase1_config.get("input", {}).get("markers"):
+            markers = phase1_config["input"]["markers"]
+            print(f"[Phase 2] Auto-loaded {len(markers)} markers from {phase1_output/'pipeline_run_config.json'}")
+        else:
+            markers = _default_markers
+    if sample_cols is None:
+        if phase1_config is not None and phase1_config.get("input", {}).get("sample_cols"):
+            sample_cols = phase1_config["input"]["sample_cols"]
+        else:
+            sample_cols = _default_sample_cols
+
+    # ---- Resolve remaining parameters against module defaults ----------
+    consensus_methods = consensus_methods if consensus_methods is not None else _default_consensus_methods
+    min_votes = min_votes if min_votes is not None else _default_min_votes
+    template_max_per_label = template_max_per_label if template_max_per_label is not None else _default_template_max_per_label
+    knn_k = knn_k if knn_k is not None else _default_knn_k
+    umap_n_neighbors = umap_n_neighbors if umap_n_neighbors is not None else _default_umap_n_neighbors
+    umap_min_dist = umap_min_dist if umap_min_dist is not None else _default_umap_min_dist
+    umap_seed = umap_seed if umap_seed is not None else _default_umap_seed
+    use_gpu = use_gpu if use_gpu is not None else _default_use_gpu
+
+    if annotation_files is not None:
+        resolved_annotation_files = {m: Path(p) for m, p in annotation_files.items()}
+    else:
+        resolved_annotation_files = {
+            m: annotations_dir / f"{m}_annotated.csv" for m in consensus_methods
+        }
+
+    # ---- Rebind to the names the rest of this function already uses ----
+    # (everything below this point is unchanged from before this function
+    # took real arguments -- these locals shadow the module globals of the
+    # same name, so no further changes were needed downstream)
+    PHASE1_OUTPUT_ = phase1_output          # noqa: N806 (kept for clarity, unused directly)
+    PHASE2_OUTPUT = phase2_output           # noqa: N806
+    ANNOTATION_FILES = resolved_annotation_files  # noqa: N806
+    CLUSTERED_FILE = clustered_file         # noqa: N806
+    FULL_DATA_FILE = full_data_file         # noqa: N806
+    MARKERS = markers                       # noqa: N806
+    SAMPLE_COLS = sample_cols               # noqa: N806
+    CONSENSUS_METHODS = consensus_methods   # noqa: N806
+    MIN_VOTES = min_votes                   # noqa: N806
+    TEMPLATE_MAX_PER_LABEL = template_max_per_label  # noqa: N806
+    KNN_K = knn_k                           # noqa: N806
+    UMAP_N_NEIGHBORS = umap_n_neighbors     # noqa: N806
+    UMAP_MIN_DIST = umap_min_dist           # noqa: N806
+    UMAP_SEED = umap_seed                   # noqa: N806
+    USE_GPU = use_gpu                       # noqa: N806
+
+    PHASE2_OUTPUT.mkdir(parents=True, exist_ok=True)
+    (PHASE2_OUTPUT / "templates").mkdir(exist_ok=True)
+    (PHASE2_OUTPUT / "plots").mkdir(exist_ok=True)
+
+    print("="*80)
+    print("CONFIGURATION")
+    print("="*80)
+    print(f"Phase 1 output: {phase1_output}")
+    print(f"Phase 2 output: {PHASE2_OUTPUT}")
+    print(f"Markers: {len(MARKERS)}")
+    print(f"GPU: {'ENABLED' if USE_GPU else 'DISABLED'}")
+    print(f"Methods: {', '.join(CONSENSUS_METHODS)}")
+    print(f"Template: max {TEMPLATE_MAX_PER_LABEL} cells/label")
+    print(f"KNN: K={KNN_K}")
+    print("="*80)
+
     print("\n" + "="*80)
     print("CONCLAVE PHASE 2 - COMPLETE PIPELINE")
     print("="*80)

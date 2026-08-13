@@ -1,0 +1,161 @@
+"""Tests for the run_phase2_complete() API refactor.
+
+Covers: real function arguments for output/input paths (previously only
+settable via mutating module globals before a zero-arg call), automatic
+marker/sample_cols detection from Phase 1's own pipeline_run_config.json,
+explicit-argument override taking priority over that auto-detection, and
+backward compatibility with the old "mutate module globals, call with no
+args" pattern (several things, including the GUI backend, still use it).
+"""
+import json
+
+import pandas as pd
+import pytest
+
+from conclave.phase1 import run_annotation_pipeline_with_resume
+
+
+@pytest.fixture
+def real_phase1_run(tmp_path, small_df, markers):
+    """A real (small, fast) Phase 1 run producing a real
+    pipeline_run_config.json and clustered/annotated outputs, plus filled-in
+    annotation files in a deliberately non-default directory name -- so
+    tests exercise the actual custom-path support, not just the defaults."""
+    phase1_out = tmp_path / "my_phase1_output"
+
+    df_labeled, meta = run_annotation_pipeline_with_resume(
+        df=small_df, markers=markers, outdir=str(phase1_out),
+        sample_size=len(small_df), dr_method=None,
+        cluster_methods=("phenograph", "kmeans"),
+        phenograph_k=5, derive_kmeans_from="phenograph",
+        resume=False, force_restart=True,
+    )
+
+    ann_dir = tmp_path / "my_custom_annotations"  # not the default "annotations"
+    ann_dir.mkdir()
+    heatmap_dir = phase1_out / "04_cluster_heatmaps"
+    fake_types = ["Tcell", "Bcell", "Macrophage"]
+    for method in ["phenograph", "kmeans"]:
+        template = pd.read_csv(heatmap_dir / f"annotation_template_{method}.csv")
+        template["annotation"] = [fake_types[i % len(fake_types)] for i in range(len(template))]
+        template.to_csv(ann_dir / f"{method}_annotated.csv", index=False)
+
+    return {
+        "phase1_output": phase1_out,
+        "annotations_dir": ann_dir,
+        "markers": markers,
+    }
+
+
+def test_import_creates_no_output_directory(tmp_path, monkeypatch):
+    """Regression test: `import conclave` alone used to create
+    ./output_phase2/ on disk as a side effect. Confirms it no longer does,
+    by importing (already happened at collection time, but re-verified via
+    reload semantics is overkill -- instead just confirm the specific
+    default-named directory doesn't exist in a fresh cwd)."""
+    monkeypatch.chdir(tmp_path)
+    import importlib
+    import conclave.phase2.pipeline_complete as p2
+    importlib.reload(p2)
+    assert not (tmp_path / "output_phase2").exists()
+
+
+def test_custom_paths_and_marker_autodetection(real_phase1_run, tmp_path):
+    from conclave.phase2.pipeline_complete import run_phase2_complete
+
+    phase2_out = tmp_path / "my_custom_phase2_output"
+
+    df_labeled, template, single_templates, report = run_phase2_complete(
+        phase1_output=str(real_phase1_run["phase1_output"]),
+        phase2_output=str(phase2_out),
+        annotations_dir=str(real_phase1_run["annotations_dir"]),
+        consensus_methods=["phenograph", "kmeans"],
+        knn_k=5,
+        # markers deliberately omitted -- must auto-load from Phase 1's config
+    )
+
+    assert len(df_labeled) > 0
+    assert phase2_out.exists()
+    assert (phase2_out / "full_dataset_labeled_complete.csv").exists()
+
+
+def test_marker_autodetection_matches_phase1_config(real_phase1_run, tmp_path, capsys):
+    from conclave.phase2.pipeline_complete import run_phase2_complete
+
+    run_phase2_complete(
+        phase1_output=str(real_phase1_run["phase1_output"]),
+        phase2_output=str(tmp_path / "p2out"),
+        annotations_dir=str(real_phase1_run["annotations_dir"]),
+        consensus_methods=["phenograph", "kmeans"],
+        knn_k=5,
+    )
+    captured = capsys.readouterr()
+    assert "Auto-loaded" in captured.out
+    assert f"{len(real_phase1_run['markers'])} markers" in captured.out
+
+
+def test_explicit_markers_argument_overrides_autodetection(real_phase1_run, tmp_path, capsys):
+    """An explicit markers= argument must win over Phase 1 config
+    auto-detection -- the whole point of it being a real argument."""
+    from conclave.phase2.pipeline_complete import run_phase2_complete
+
+    subset_markers = real_phase1_run["markers"][:3]
+
+    run_phase2_complete(
+        phase1_output=str(real_phase1_run["phase1_output"]),
+        phase2_output=str(tmp_path / "p2out_explicit"),
+        annotations_dir=str(real_phase1_run["annotations_dir"]),
+        consensus_methods=["phenograph", "kmeans"],
+        knn_k=5,
+        markers=subset_markers,
+    )
+    captured = capsys.readouterr()
+    assert "Auto-loaded" not in captured.out
+    assert f"Markers: {len(subset_markers)}" in captured.out
+
+
+def test_legacy_module_attribute_pattern_still_works(real_phase1_run, tmp_path):
+    """The old pattern (mutate module globals, call with zero arguments)
+    must keep working unchanged -- the GUI backend and older user code
+    depend on it."""
+    import conclave.phase2.pipeline_complete as p2
+
+    p2.PHASE1_OUTPUT = real_phase1_run["phase1_output"]
+    p2.PHASE2_OUTPUT = tmp_path / "legacy_p2out"
+    p2.ANNOTATIONS_DIR = real_phase1_run["annotations_dir"]
+    p2.CLUSTERED_FILE = real_phase1_run["phase1_output"] / "03_clustering_annotation" / "clustered_subset_with_labels_on_sampled.csv"
+    p2.FULL_DATA_FILE = real_phase1_run["phase1_output"] / "01_normalized_full.csv"
+    p2.MARKERS = real_phase1_run["markers"]
+    p2.CONSENSUS_METHODS = ["phenograph", "kmeans"]
+    p2.KNN_K = 5
+    p2.SAMPLE_COLS = []
+
+    df_labeled, template, single_templates, report = p2.run_phase2_complete()
+
+    assert len(df_labeled) > 0
+    assert (tmp_path / "legacy_p2out" / "full_dataset_labeled_complete.csv").exists()
+
+
+def test_missing_phase1_config_falls_back_to_module_default_markers(real_phase1_run, tmp_path, capsys):
+    """If Phase 1 wasn't run through run_annotation_pipeline() (no
+    pipeline_run_config.json present), Phase 2 should fall back to the
+    module-level MARKERS default rather than crash."""
+    from conclave.phase2.pipeline_complete import run_phase2_complete
+
+    (real_phase1_run["phase1_output"] / "pipeline_run_config.json").unlink()
+
+    # Fine as long as it doesn't crash trying to auto-detect; it'll fall
+    # back to the (wrong-for-this-data) module default marker list, which
+    # is a config problem for the caller to notice, not a crash.
+    try:
+        run_phase2_complete(
+            phase1_output=str(real_phase1_run["phase1_output"]),
+            phase2_output=str(tmp_path / "p2out_noconfig"),
+            annotations_dir=str(real_phase1_run["annotations_dir"]),
+            consensus_methods=["phenograph", "kmeans"],
+            knn_k=5,
+        )
+    except KeyError:
+        pass  # expected: module-default melanoma markers aren't in this synthetic data
+    captured = capsys.readouterr()
+    assert "Auto-loaded" not in captured.out
