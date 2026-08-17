@@ -15,6 +15,7 @@ export interface JobStatus {
   logs: string[];
   error: string | null;
   result: Record<string, unknown>;
+  outdir?: string;
 }
 
 export interface Phase1Request {
@@ -33,6 +34,9 @@ export interface Phase1Request {
   flowsom_rscript: string | null;
   depeche_rscript: string | null;
   seed: number;
+  outdir?: string | null;
+  force_restart: boolean;
+  label?: string | null;
 }
 
 export interface ClusterRow {
@@ -45,15 +49,29 @@ export interface ClustersResponse {
   methods: string[];
   clusters: Record<string, ClusterRow[]>;
   annotated_methods: string[];
+  outdir: string;
+}
+
+export interface Phase1JobSummary {
+  id: string;
+  kind: string;
+  status: string;
+  label: string | null;
+  outdir: string | null;
+  created_at: number;
+  result: Record<string, unknown>;
 }
 
 export interface Phase2Request {
-  phase1_job_id: string;
+  phase1_job_id?: string | null;
+  phase1_outdir?: string | null;
   methods: string[];
   knn_k: number;
   min_votes: number;
   sample_cols: string[];
   template_max_per_label: number;
+  outdir?: string | null;
+  label?: string | null;
 }
 
 async function asJson<T>(res: Response): Promise<T> {
@@ -77,12 +95,17 @@ export async function uploadCsv(file: File): Promise<UploadResponse> {
   return asJson(res);
 }
 
-export async function startPhase1(req: Phase1Request): Promise<{ job_id: string }> {
+export async function startPhase1(req: Phase1Request): Promise<{ job_id: string; outdir: string }> {
   const res = await fetch("/api/phase1/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
+  return asJson(res);
+}
+
+export async function listPhase1Jobs(): Promise<{ jobs: Phase1JobSummary[] }> {
+  const res = await fetch("/api/phase1/jobs");
   return asJson(res);
 }
 
@@ -113,7 +136,22 @@ export async function saveAnnotations(
   return asJson(res);
 }
 
-export async function startPhase2(req: Phase2Request): Promise<{ job_id: string }> {
+export async function uploadAnnotations(
+  jobId: string,
+  method: string,
+  file: File
+): Promise<{ status: string; n_clusters: number; n_annotated: number }> {
+  const form = new FormData();
+  form.append("method", method);
+  form.append("file", file);
+  const res = await fetch(`/api/phase1/jobs/${jobId}/annotations/upload`, {
+    method: "POST",
+    body: form,
+  });
+  return asJson(res);
+}
+
+export async function startPhase2(req: Phase2Request): Promise<{ job_id: string; outdir: string }> {
   const res = await fetch("/api/phase2/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

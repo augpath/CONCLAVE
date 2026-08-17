@@ -1,48 +1,63 @@
 import { useState } from "react";
 import { startPhase2, type Phase2Request } from "../api";
+import type { Phase2FormValues } from "../formTypes";
 
 interface Props {
   phase1JobId: string;
   annotatedMethods: string[];
   sampleColsUsedInPhase1: string[];
+  values: Phase2FormValues;
+  onChange: (values: Phase2FormValues) => void;
   onStarted: (jobId: string) => void;
+  onBack: () => void;
 }
 
 export default function Phase2ConfigStep({
   phase1JobId,
   annotatedMethods,
   sampleColsUsedInPhase1,
+  values: v,
+  onChange,
   onStarted,
+  onBack,
 }: Props) {
-  const [methods, setMethods] = useState<Set<string>>(new Set(annotatedMethods));
-  const [knnK, setKnnK] = useState(25);
-  const [minVotes, setMinVotes] = useState(2);
-  const [templateMax, setTemplateMax] = useState(500);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manualMethodsText, setManualMethodsText] = useState(v.methods.join(", "));
 
-  function toggle(item: string) {
-    const next = new Set(methods);
-    if (next.has(item)) next.delete(item);
-    else next.add(item);
-    setMethods(next);
+  function update(patch: Partial<Phase2FormValues>) {
+    onChange({ ...v, ...patch });
   }
+
+  function toggleMethod(item: string) {
+    const next = v.methods.includes(item)
+      ? v.methods.filter((x) => x !== item)
+      : [...v.methods, item];
+    update({ methods: next });
+  }
+
+  const usingOverride = v.phase1OutdirOverride.trim().length > 0;
 
   async function handleSubmit() {
     setError(null);
-    if (methods.size < 2) {
-      setError("Select at least 2 methods for majority-vote consensus.");
+    const methods = usingOverride
+      ? manualMethodsText.split(",").map((s) => s.trim()).filter(Boolean)
+      : v.methods;
+    if (methods.length < 2) {
+      setError("Select (or list) at least 2 methods for majority-vote consensus.");
       return;
     }
     setBusy(true);
     try {
       const req: Phase2Request = {
-        phase1_job_id: phase1JobId,
-        methods: [...methods],
-        knn_k: knnK,
-        min_votes: minVotes,
+        phase1_job_id: usingOverride ? null : phase1JobId,
+        phase1_outdir: usingOverride ? v.phase1OutdirOverride.trim() : null,
+        methods,
+        knn_k: v.knnK,
+        min_votes: v.minVotes,
         sample_cols: sampleColsUsedInPhase1,
-        template_max_per_label: templateMax,
+        template_max_per_label: v.templateMaxPerLabel,
+        outdir: v.outdir.trim() || null,
       };
       const { job_id } = await startPhase2(req);
       onStarted(job_id);
@@ -52,6 +67,10 @@ export default function Phase2ConfigStep({
       setBusy(false);
     }
   }
+
+  const selectedCount = usingOverride
+    ? manualMethodsText.split(",").map((s) => s.trim()).filter(Boolean).length
+    : v.methods.length;
 
   return (
     <div className="card">
@@ -63,15 +82,51 @@ export default function Phase2ConfigStep({
       </p>
 
       <fieldset>
-        <legend>Methods to include in consensus</legend>
-        <div className="chip-grid">
-          {annotatedMethods.map((m) => (
-            <label key={m} className={`chip ${methods.has(m) ? "chip-on" : ""}`}>
-              <input type="checkbox" checked={methods.has(m)} onChange={() => toggle(m)} />
-              {m}
-            </label>
-          ))}
-        </div>
+        <legend>Phase 1 source</legend>
+        <label className="full-width">
+          Use a different Phase 1 output directory instead (optional)
+          <input
+            type="text"
+            value={v.phase1OutdirOverride}
+            onChange={(e) => update({ phase1OutdirOverride: e.target.value })}
+            placeholder="leave blank to use the run from the previous step"
+          />
+        </label>
+        <p className="muted">
+          Points at any Phase 1 output — from the CLI, a notebook, or an earlier GUI session —
+          not just the one you just ran.
+        </p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Methods to include in consensus ({selectedCount} selected)</legend>
+        {usingOverride ? (
+          <label className="full-width">
+            Method names (comma-separated) — must match annotated methods in that directory
+            <input
+              type="text"
+              value={manualMethodsText}
+              onChange={(e) => setManualMethodsText(e.target.value)}
+              placeholder="phenograph, kmeans, leiden"
+            />
+          </label>
+        ) : (
+          <div className="chip-grid">
+            {annotatedMethods.map((m) => (
+              <label key={m} className={`chip ${v.methods.includes(m) ? "chip-on" : ""}`}>
+                <input type="checkbox" checked={v.methods.includes(m)} onChange={() => toggleMethod(m)} />
+                {m}
+              </label>
+            ))}
+          </div>
+        )}
+        {selectedCount !== 3 && (
+          <p className="warn">
+            The consensus methodology (majority vote, disagreement scoring) was validated around
+            exactly 3 methods. It'll still run correctly with a different count, but consider
+            picking exactly 3 for results closest to the validated design.
+          </p>
+        )}
       </fieldset>
 
       <fieldset>
@@ -79,34 +134,48 @@ export default function Phase2ConfigStep({
         <div className="form-grid">
           <label>
             KNN k
-            <input type="number" value={knnK} min={1} onChange={(e) => setKnnK(Number(e.target.value))} />
+            <input type="number" value={v.knnK} min={1} onChange={(e) => update({ knnK: Number(e.target.value) })} />
           </label>
           <label>
             Min votes for consensus
             <input
               type="number"
-              value={minVotes}
+              value={v.minVotes}
               min={1}
-              max={methods.size || 1}
-              onChange={(e) => setMinVotes(Number(e.target.value))}
+              max={selectedCount || 1}
+              onChange={(e) => update({ minVotes: Number(e.target.value) })}
             />
           </label>
           <label>
             Max cells per label in template
             <input
               type="number"
-              value={templateMax}
+              value={v.templateMaxPerLabel}
               min={10}
-              onChange={(e) => setTemplateMax(Number(e.target.value))}
+              onChange={(e) => update({ templateMaxPerLabel: Number(e.target.value) })}
+            />
+          </label>
+          <label className="full-width">
+            Output directory (optional)
+            <input
+              type="text"
+              value={v.outdir}
+              onChange={(e) => update({ outdir: e.target.value })}
+              placeholder="leave blank to use an auto-generated location"
             />
           </label>
         </div>
       </fieldset>
 
       {error && <p className="error">Error: {error}</p>}
-      <button disabled={busy} onClick={handleSubmit}>
-        {busy ? "Starting…" : "Run Phase 2"}
-      </button>
+      <div className="button-row">
+        <button className="secondary" disabled={busy} onClick={onBack}>
+          ← Back
+        </button>
+        <button disabled={busy} onClick={handleSubmit}>
+          {busy ? "Starting…" : "Run Phase 2"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -108,6 +108,21 @@ button {
 button:disabled { background: #aaa; cursor: not-allowed; }
 button:hover:not(:disabled) { background: #1f3778; }
 
+.button-row { display: flex; gap: 10px; margin-top: 12px; }
+button.secondary { background: #eee; color: #333; }
+button.secondary:hover:not(:disabled) { background: #ddd; }
+
+.checkbox-label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+}
+.checkbox-label input[type="checkbox"] { width: auto; }
+
+.mode-toggle { display: flex; gap: 6px; margin: 4px 0 16px; }
+.upload-annotations input[type="file"] { margin-top: 8px; }
+
 .error { color: #b3261e; font-weight: 600; }
 .warn { color: #8a5a00; }
 .ok { color: #1e7a34; font-weight: 600; }
