@@ -448,13 +448,9 @@ def run_annotation_pipeline(
     # ================================================================
     # STEP 6: Visualization
     # ================================================================
-    # NOTE: unlike Step 5 (clustering), this used to only check whether A
-    # visualization checkpoint existed at all -- not whether it actually
-    # covered every currently-requested method. Adding a new method to
-    # cluster_methods and resuming would silently skip regenerating
-    # heatmaps/annotation templates for it, even though clustering itself
-    # correctly re-ran and included the new method. Mirror Step 5's
-    # existing/missing-methods check here too.
+    # Resuming only regenerates visualizations if every requested method's
+    # output is already present -- mirrors the same per-method check used
+    # for the clustering step above.
     viz_can_resume = False
     if _resume and check_checkpoint_exists(outdir, 'visualization'):
         viz_checkpoint = load_checkpoint(outdir, 'visualization', logger)

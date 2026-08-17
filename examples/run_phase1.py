@@ -83,12 +83,10 @@ def main():
     failed = metadata["results"].get("failed_methods", {})
     if failed:
         print()
-        print("⚠️  Some methods FAILED and were skipped (already-successful methods were")
-        print("   NOT lost -- this used to abort the whole run and discard everything):")
+        print("Some methods failed and were skipped (already-successful methods are kept):")
         for m, err in failed.items():
             print(f"    {m}: {err}")
-        print("   Fix the underlying issue, then re-run this script (resume picks up")
-        print("   only the failed methods, everything else is skipped as already done).")
+        print("Fix the issue, then re-run this script -- resume will retry only the failed methods.")
 
     print()
     print("Next step: annotate the clusters.")

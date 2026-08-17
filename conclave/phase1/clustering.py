@@ -624,11 +624,7 @@ def cluster_annotation_subset(
             failed_methods[method] = str(e)
             if logger:
                 logger.error(f"❌ {method.capitalize()} failed: {e}")
-                logger.warning(
-                    f"⚠️  Skipping '{method}' and continuing with the remaining methods "
-                    f"(this used to abort the entire clustering step, silently losing "
-                    f"already-completed methods -- it no longer does)"
-                )
+                logger.warning(f"⚠️  Skipping '{method}' and continuing with the remaining methods")
             continue
 
     if not labels_dict:
