@@ -234,7 +234,7 @@ output_phase2/
     ├── spatial_confidence_heatmap_tiles.png
     └── ...
 ```
-
+</details>
 ## Documentation
 
 - **GitHub**: https://github.com/augpath/CONCLAVE
