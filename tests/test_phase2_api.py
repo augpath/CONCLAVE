@@ -312,3 +312,108 @@ def test_missing_phase1_config_falls_back_to_module_default_markers(real_phase1_
         pass  # expected: module-default melanoma markers aren't in this synthetic data
     captured = capsys.readouterr()
     assert "Auto-loaded" not in captured.out
+
+
+def test_disagreement_scoring_correct_for_non_three_method_counts():
+    """Regression test for a real bug: compute_full_disagreement()'s
+    'absolute no-consensus' check was hardcoded to require exactly 3
+    methods (`len(labels_list) == 3`). With any other method count, that
+    condition could never be true, so it silently reported 0% disagreement
+    regardless of the actual data -- not a crash, just quietly wrong
+    numbers. Generalized to the actual method count."""
+    import pandas as pd
+    from conclave.phase2.pipeline_complete import compute_full_disagreement
+
+    # row 0: all 4 agree -> no disagreement
+    # row 1: all 4 different -> absolute no-consensus
+    # row 2: 3 agree, 1 differs -> partial disagreement, not absolute
+    df = pd.DataFrame({
+        "phenograph_label_projected": ["A", "A", "A"],
+        "kmeans_label_projected":     ["A", "B", "A"],
+        "leiden_label_projected":     ["A", "C", "A"],
+        "birch_label_projected":      ["A", "D", "B"],
+    })
+    out, pct, _ = compute_full_disagreement(df, ["phenograph", "kmeans", "leiden", "birch"])
+
+    assert list(out["absolute_no_consensus"]) == [0, 1, 0]
+    assert out["disagreement_score_full"].iloc[1] == 3  # 4 methods, all different -> n_methods - 1
+    assert pct == pytest.approx(100 / 3)  # 1 of 3 rows -- must NOT be 0
+
+
+def test_disagreement_scoring_still_correct_for_three_methods():
+    """Same check, but for the originally-intended 3-method case -- no
+    regression from generalizing the n_methods==3 hardcoding."""
+    import pandas as pd
+    from conclave.phase2.pipeline_complete import compute_full_disagreement
+
+    df = pd.DataFrame({
+        "phenograph_label_projected": ["A", "A"],
+        "kmeans_label_projected":     ["A", "B"],
+        "leiden_label_projected":     ["A", "C"],
+    })
+    out, pct, _ = compute_full_disagreement(df, ["phenograph", "kmeans", "leiden"])
+    assert list(out["absolute_no_consensus"]) == [0, 1]
+    assert out["disagreement_score_full"].iloc[1] == 2
+    assert pct == pytest.approx(50.0)
+
+
+def test_phase2_plots_do_not_crash_with_more_than_three_methods(tmp_path, small_df, markers):
+    """Regression test for a real bug: the confidence-distribution plot
+    used a hardcoded 2x2 subplot grid (max 4 panels = 1 consensus + 3
+    methods) and a 3-color palette, both silently assuming at most 3
+    consensus methods. A 4th method caused axes[4] to go out of bounds.
+    Now scales to any method count."""
+    outdir = tmp_path / "phase1_out"
+    run_annotation_pipeline_with_resume(
+        df=small_df, markers=markers, outdir=str(outdir),
+        sample_size=len(small_df), dr_method=None,
+        cluster_methods=("phenograph", "kmeans", "leiden", "birch"),
+        phenograph_k=5, derive_kmeans_from="phenograph",
+        resume=False, force_restart=True,
+    )
+
+    ann_dir = outdir / "annotations"
+    fake_types = ["Tcell", "Bcell", "Macrophage"]
+    for method in ["phenograph", "kmeans", "leiden", "birch"]:
+        df = pd.read_csv(ann_dir / f"annotation_template_{method}.csv")
+        df["annotation"] = [fake_types[i % len(fake_types)] for i in range(len(df))]
+        df.to_csv(ann_dir / f"annotation_template_{method}.csv", index=False)
+
+    from conclave.phase2.pipeline_complete import run_phase2_complete
+
+    df_labeled, template, single_templates, report = run_phase2_complete(
+        phase1_output=str(outdir),
+        phase2_output=str(tmp_path / "phase2_out"),
+        knn_k=5,
+    )  # must not raise IndexError
+
+    assert (tmp_path / "phase2_out" / "plots" / "confidence_all_methods.png").exists()
+    # the fix must not have broken the actual math either
+    assert not (df_labeled["disagreement_score_full"] == 0).all()
+
+
+def test_warning_printed_when_consensus_methods_not_three(tmp_path, small_df, markers, capsys):
+    """A count other than 3 should print a clear warning (not raise --
+    the pipeline still runs correctly), and exactly 3 should not."""
+    from conclave.phase2.pipeline_complete import run_phase2_complete
+
+    outdir = tmp_path / "phase1_out"
+    run_annotation_pipeline_with_resume(
+        df=small_df, markers=markers, outdir=str(outdir),
+        sample_size=len(small_df), dr_method=None,
+        cluster_methods=("phenograph", "kmeans"),
+        phenograph_k=5, derive_kmeans_from="phenograph",
+        resume=False, force_restart=True,
+    )
+    ann_dir = outdir / "annotations"
+    for method in ["phenograph", "kmeans"]:
+        df = pd.read_csv(ann_dir / f"annotation_template_{method}.csv")
+        df["annotation"] = ["Tcell"] * len(df)
+        df.to_csv(ann_dir / f"annotation_template_{method}.csv", index=False)
+
+    run_phase2_complete(
+        phase1_output=str(outdir), phase2_output=str(tmp_path / "p2_2methods"), knn_k=5,
+    )
+    captured = capsys.readouterr()
+    assert "methods selected for consensus" in captured.out
+    assert "built around exactly 3" in captured.out

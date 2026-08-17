@@ -179,6 +179,7 @@ def compute_full_disagreement(df, methods):
     
     disagreement_per_cell = []
     disagreement_scores = []
+    n_methods = len(methods)
     
     for idx, row in df.iterrows():
         labels_set = set()
@@ -190,10 +191,13 @@ def compute_full_disagreement(df, methods):
                 labels_list.append(label)
                 labels_set.add(label)
         
-        # Absolute no-consensus: all 3 are DIFFERENT (|L_i| = 3)
-        if len(labels_list) == 3 and len(labels_set) == 3:
+        # Absolute no-consensus: every method's label is DIFFERENT
+        # (previously hardcoded to check for exactly 3 methods, which
+        # silently could never be true -- and so always reported 0%
+        # disagreement -- whenever a different number of methods was used)
+        if len(labels_list) == n_methods and len(labels_set) == n_methods and n_methods > 1:
             disagreement_per_cell.append(1)  # Absolute no-consensus
-            disagreement_scores.append(2)    # For compatibility
+            disagreement_scores.append(n_methods - 1)
         else:
             disagreement_per_cell.append(0)  # Some agreement
             disagreement_scores.append(len(labels_set) - 1 if len(labels_set) > 0 else 0)
@@ -515,6 +519,16 @@ def run_phase2_complete(
             )
         else:
             consensus_methods = _default_consensus_methods
+
+    if len(consensus_methods) != 3:
+        print(
+            f"⚠️  [Phase 2] {len(consensus_methods)} methods selected for consensus "
+            f"({consensus_methods}) -- the majority-vote design (MIN_VOTES=2 by default) "
+            f"and disagreement scoring were built around exactly 3. It will still run "
+            f"correctly with a different count, but consider picking exactly 3 methods "
+            f"for results that match the validated methodology most closely. Pass "
+            f"consensus_methods=[...] with exactly 3 to silence this."
+        )
 
     # ---- Resolve remaining parameters against module defaults ----------
     min_votes = min_votes if min_votes is not None else _default_min_votes
@@ -1209,8 +1223,11 @@ def run_phase2_complete(
     
     # Confidence distributions (consensus + all single methods)
     print("  Creating comprehensive confidence distributions...")
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    axes = axes.flatten()
+    n_panels = 1 + len(CONSENSUS_METHODS)  # +1 for consensus
+    n_cols = min(3, n_panels)
+    n_rows = int(np.ceil(n_panels / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(7 * n_cols, 5 * n_rows))
+    axes = np.atleast_1d(axes).flatten()
     
     # Consensus
     axes[0].hist(df_full['confidence_score'], bins=50, alpha=0.7, color='blue', edgecolor='black')
@@ -1221,8 +1238,12 @@ def run_phase2_complete(
     axes[0].legend()
     axes[0].grid(alpha=0.3)
     
-    # Single methods
-    colors_methods = ['orange', 'green', 'purple']
+    # Single methods -- cycle through a palette long enough for any number
+    # of methods (previously hardcoded to exactly 3 colors, breaking with
+    # more than 3 methods requested)
+    palette = ['orange', 'green', 'purple', 'brown', 'teal', 'goldenrod',
+               'crimson', 'slateblue', 'darkcyan', 'olive']
+    colors_methods = [palette[i % len(palette)] for i in range(len(CONSENSUS_METHODS))]
     for i, method in enumerate(CONSENSUS_METHODS):
         conf_col = f'{method}_confidence'
         if conf_col in df_full.columns:
@@ -1235,6 +1256,11 @@ def run_phase2_complete(
             axes[i+1].set_title(f'{method.title()} Confidence', fontsize=12, fontweight='bold')
             axes[i+1].legend()
             axes[i+1].grid(alpha=0.3)
+    
+    # Hide any unused trailing subplot slots (e.g. grid is 2x3=6 but only
+    # 5 panels are actually used)
+    for j in range(n_panels, len(axes)):
+        axes[j].set_visible(False)
     
     plt.tight_layout()
     plt.savefig(plots_dir / "confidence_all_methods.png", dpi=300, bbox_inches='tight')
