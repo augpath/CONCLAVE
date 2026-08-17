@@ -2,6 +2,7 @@
 import time
 import json
 import logging
+import shutil
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -492,6 +493,38 @@ def run_annotation_pipeline(
         }, logger)
     
     # ================================================================
+    # STEP 6b: Prepare annotations/ folder
+    # ================================================================
+    # Copies each method's blank annotation_template_<method>.csv from
+    # 04_cluster_heatmaps/ into a dedicated annotations/ folder, ready to
+    # edit -- saves the manual "create a folder and copy files" step
+    # before Phase 2. Never overwrites a file already there (in case the
+    # user has already started filling one in and this step re-runs, e.g.
+    # via resume after adding a method).
+    logger.info("")
+    logger.info("STEP 6b: Preparing annotations/ folder")
+    logger.info("-" * 80)
+    annotations_dir = outdir / "annotations"
+    annotations_dir.mkdir(exist_ok=True)
+    heatmap_dir = outdir / "04_cluster_heatmaps"
+    copied, skipped_existing = [], []
+    for method in cluster_methods:
+        src = heatmap_dir / f"annotation_template_{method}.csv"
+        dst = annotations_dir / f"annotation_template_{method}.csv"
+        if not src.exists():
+            continue
+        if dst.exists():
+            skipped_existing.append(method)
+            continue
+        shutil.copy2(src, dst)
+        copied.append(method)
+    if copied:
+        logger.info(f"  Copied templates for {copied} -> {annotations_dir}")
+    if skipped_existing:
+        logger.info(f"  Left existing files untouched for {skipped_existing} (already in annotations/)")
+    logger.info(f"  Next: fill in the 'annotation' column in each file in {annotations_dir}, then run Phase 2")
+
+    # ================================================================
     # STEP 7: Save Final Metadata
     # ================================================================
     logger.info("")
@@ -532,6 +565,7 @@ def run_annotation_pipeline(
             "dr_matrix": str(outdir / "02_dr" / "dr_matrix.csv"),
             "labeled_sampled_df": str(outdir / "03_clustering_annotation" / "clustered_subset_with_labels_on_sampled.csv"),
             "heatmap_dir": str(outdir / "04_cluster_heatmaps"),
+            "annotations_dir": str(outdir / "annotations"),
             "visualization_outputs": summary_outputs,
         },
         "log_file": str(log_path),

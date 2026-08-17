@@ -144,43 +144,50 @@ output_phase1/
 │   └── labels/labels_<method>.csv    (one file per clustering method)
 ├── 04_cluster_heatmaps/
 │   ├── heatmap_topN_ranked_<method>.png
-│   ├── annotation_template_<method>.csv  ← Annotate these!
+│   ├── annotation_template_<method>.csv
 │   ├── cluster_topN_wide_<method>.csv
 │   ├── cluster_topN_long_<method>.csv
 │   └── cluster_sizes_<method>.csv
+├── annotations/
+│   └── annotation_template_<method>.csv  ← Annotate these! Auto-copied from
+│                                            04_cluster_heatmaps/ above, ready to
+│                                            edit -- re-running Phase 1 (e.g. via
+│                                            resume) never overwrites a file
+│                                            already here, so in-progress edits
+│                                            are safe
 ├── pipeline_run_config.json         (full record of parameters used)
 └── pipeline_log.txt
 ```
 
 ### Phase 2: Consensus & Projection
 
-After manually annotating clusters using the templates from Phase 1 (fill in the
-`annotation` column of each `annotation_template_<method>.csv` and save it, one file per
-method, e.g. `phenograph_annotated.csv`):
+After manually annotating clusters (fill in the `annotation` column of each file in
+`output_phase1/annotations/` and save):
 
 ```python
 from conclave.phase2.pipeline_complete import run_phase2_complete
 
 df_labeled, template, single_templates, report = run_phase2_complete(
-    phase1_output="./output_phase1",       # optional -- defaults shown
-    phase2_output="./output_phase2",       # optional
-    annotations_dir="./annotations",       # optional -- your filled-in *_annotated.csv files
-    consensus_methods=["phenograph", "kmeans"],  # match what you ran in Phase 1
+    phase1_output="./output_phase1",
+    phase2_output="./output_phase2",
     knn_k=25,
+    # annotations_dir not passed -- defaults to output_phase1/annotations
+    # consensus_methods not passed -- auto-detected from whichever files in
+    #   there are actually filled in (non-blank 'annotation' column); if
+    #   you clustered with 5 methods but only annotated 3, those 3 are used
     # markers not passed -- auto-loaded from output_phase1/pipeline_run_config.json,
-    # so Phase 2 automatically uses the same markers Phase 1 was run with
+    #   so Phase 2 automatically uses the same markers Phase 1 was run with
 )
 
 print(f"✅ Labeled {len(df_labeled):,} cells")
 print(f"Consensus confidence: {df_labeled['confidence_score'].mean():.3f}")
 ```
 
-All paths are optional and independently overridable — point `phase1_output`/`annotations_dir`
-anywhere your files actually live, no need to follow the default layout. `markers` is also
-optional: if omitted, it's auto-detected from Phase 1's own `pipeline_run_config.json` (falling
-back to a module-level default only if that file isn't found), so Phase 2 can't silently drift
-from the marker panel Phase 1 actually used. Pass `markers=[...]` explicitly if you want to
-override that.
+Everything above is optional and independently overridable. Pass `annotations_dir=...` to point
+elsewhere, or `consensus_methods=[...]` to pick a specific subset regardless of what's been
+annotated (e.g. you've annotated all 5 methods but only want 3 in the consensus vote) — an
+explicit `consensus_methods` always wins over auto-detection. Same for `markers=[...]` overriding
+the auto-loaded marker list.
 
 <details>
 <summary>Older module-attribute pattern (still supported, for existing code)</summary>
@@ -190,8 +197,6 @@ import conclave.phase2.pipeline_complete as p2
 
 p2.PHASE1_OUTPUT = "./output_phase1"
 p2.PHASE2_OUTPUT = "./output_phase2"
-p2.ANNOTATIONS_DIR = "./annotations"
-p2.CONSENSUS_METHODS = ["phenograph", "kmeans"]
 p2.KNN_K = 25
 
 df_labeled, template, single_templates, report = p2.run_phase2_complete()

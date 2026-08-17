@@ -128,6 +128,46 @@ def _load_phase1_config(phase1_output: Path):
     except Exception:
         return None
 
+
+def _discover_annotated_methods(annotations_dir: Path):
+    """Scan annotations_dir for CSVs that look genuinely annotated (have
+    an 'annotation' column with at least one non-blank value), under
+    either naming convention this package has used:
+      - annotation_template_<method>.csv  (what run_annotation_pipeline()
+        now copies into outdir/annotations/ automatically)
+      - <method>_annotated.csv            (the older/GUI-backend convention)
+
+    Returns {method_name: file_path}, sorted by method name for
+    deterministic ordering. Files present but with a blank 'annotation'
+    column (i.e. not yet filled in) are skipped, not counted as annotated.
+    """
+    annotations_dir = Path(annotations_dir)
+    if not annotations_dir.exists():
+        return {}
+
+    discovered = {}
+    for path in sorted(annotations_dir.glob("*.csv")):
+        name = path.stem
+        if name.startswith("annotation_template_"):
+            method = name[len("annotation_template_"):]
+        elif name.endswith("_annotated"):
+            method = name[: -len("_annotated")]
+        else:
+            continue
+        if not method:
+            continue
+        try:
+            df = pd.read_csv(path)
+        except Exception:
+            continue
+        if "annotation" not in df.columns:
+            continue
+        non_blank = df["annotation"].notna() & (df["annotation"].astype(str).str.strip() != "")
+        if non_blank.any():
+            discovered[method] = path
+
+    return dict(sorted(discovered.items()))
+
 def compute_full_disagreement(df, methods):
     """
     Compute disagreement on full dataset.
@@ -353,7 +393,7 @@ def run_phase2_complete(
     etc.) -- this preserves the older "set the module attribute, then call
     with no arguments" pattern, so existing code keeps working.
 
-    Two arguments get an extra layer of auto-detection when omitted:
+    Three arguments get an extra layer of auto-detection when omitted:
 
     - `markers`: if not given, first tries to auto-load the marker list
       from `phase1_output/pipeline_run_config.json` (written automatically
@@ -362,6 +402,14 @@ def run_phase2_complete(
       them and risk a silent mismatch. Falls back to the module-level
       `MARKERS` default only if that config file isn't found.
     - `sample_cols`: same auto-detection, from the same config file.
+    - `consensus_methods`: if not given, scans `annotations_dir` for CSVs
+      that are genuinely filled in (non-blank `annotation` column, either
+      `annotation_template_<method>.csv` -- what Phase 1 now copies there
+      automatically -- or the older `<method>_annotated.csv` convention)
+      and uses exactly those methods. If Phase 1 clustered with 5 methods
+      but you've only annotated 3 so far, those 3 are what gets used.
+      Pass `consensus_methods=[...]` explicitly to pick a specific subset
+      regardless of what's been annotated.
 
     Parameters
     ----------
@@ -369,19 +417,25 @@ def run_phase2_complete(
         Where Phase 1's outputs live, and where Phase 2 should write its
         own outputs.
     annotations_dir : path-like, optional
-        Folder containing your filled-in `<method>_annotated.csv` files.
+        Folder containing your filled-in annotation CSVs. Defaults to
+        `phase1_output/annotations` (where `run_annotation_pipeline()`
+        copies blank templates automatically) when `phase1_output` is
+        given; otherwise falls back to the module-level `ANNOTATIONS_DIR`
+        default.
     clustered_file, full_data_file : path-like, optional
         Override the specific Phase 1 output files Phase 2 reads, if your
         layout differs from the standard `run_annotation_pipeline()` output
         structure.
     annotation_files : dict[str, path-like], optional
-        Explicit {method: path} mapping, if it doesn't follow the
-        `annotations_dir/<method>_annotated.csv` convention.
+        Explicit {method: path} mapping. Overrides both the naming-pattern
+        lookup and the `consensus_methods` auto-detection above.
     markers : list[str], optional
         See auto-detection note above.
     sample_cols : list[str], optional
         See auto-detection note above.
-    consensus_methods, min_votes, template_max_per_label, knn_k,
+    consensus_methods : list[str], optional
+        See auto-detection note above.
+    min_votes, template_max_per_label, knn_k,
     umap_n_neighbors, umap_min_dist, umap_seed, use_gpu :
         Same meaning as the module-level defaults of the same name
         (uppercased), used as the fallback when not given here.
@@ -411,17 +465,22 @@ def run_phase2_complete(
     _default_use_gpu = _g['USE_GPU']
 
     # ---- Resolve paths -----------------------------------------------
+    _phase1_output_given = phase1_output is not None
     phase1_output = Path(phase1_output) if phase1_output is not None else Path(_default_phase1_output)
     phase2_output = Path(phase2_output) if phase2_output is not None else Path(_default_phase2_output)
-    annotations_dir = Path(annotations_dir) if annotations_dir is not None else Path(_default_annotations_dir)
+    annotations_dir = Path(annotations_dir) if annotations_dir is not None else (
+        phase1_output / "annotations"
+        if _phase1_output_given
+        else Path(_default_annotations_dir)
+    )
     clustered_file = Path(clustered_file) if clustered_file is not None else (
         phase1_output / "03_clustering_annotation" / "clustered_subset_with_labels_on_sampled.csv"
-        if phase1_output != Path(_default_phase1_output)
+        if _phase1_output_given
         else Path(_default_clustered_file)
     )
     full_data_file = Path(full_data_file) if full_data_file is not None else (
         phase1_output / "01_normalized_full.csv"
-        if phase1_output != Path(_default_phase1_output)
+        if _phase1_output_given
         else Path(_default_full_data_file)
     )
 
@@ -439,8 +498,25 @@ def run_phase2_complete(
         else:
             sample_cols = _default_sample_cols
 
+    # ---- Resolve consensus_methods, with annotations/ folder auto-detection ----
+    # By default (no consensus_methods given), scan annotations_dir for
+    # files that are genuinely filled in (non-blank 'annotation' column)
+    # and use exactly those methods -- e.g. if Phase 1 clustered with 5
+    # methods but only 3 have been annotated so far, those 3 are used.
+    # Pass consensus_methods explicitly to override this and pick a
+    # specific subset regardless of what's been annotated.
+    discovered_methods = _discover_annotated_methods(annotations_dir)
+    if consensus_methods is None:
+        if discovered_methods:
+            consensus_methods = list(discovered_methods.keys())
+            print(
+                f"[Phase 2] Auto-detected {len(consensus_methods)} annotated method(s) "
+                f"in {annotations_dir}: {consensus_methods}"
+            )
+        else:
+            consensus_methods = _default_consensus_methods
+
     # ---- Resolve remaining parameters against module defaults ----------
-    consensus_methods = consensus_methods if consensus_methods is not None else _default_consensus_methods
     min_votes = min_votes if min_votes is not None else _default_min_votes
     template_max_per_label = template_max_per_label if template_max_per_label is not None else _default_template_max_per_label
     knn_k = knn_k if knn_k is not None else _default_knn_k
@@ -452,9 +528,21 @@ def run_phase2_complete(
     if annotation_files is not None:
         resolved_annotation_files = {m: Path(p) for m, p in annotation_files.items()}
     else:
-        resolved_annotation_files = {
-            m: annotations_dir / f"{m}_annotated.csv" for m in consensus_methods
-        }
+        resolved_annotation_files = {}
+        for m in consensus_methods:
+            if m in discovered_methods:
+                resolved_annotation_files[m] = discovered_methods[m]
+            else:
+                # Not picked up by discovery (e.g. explicitly requested
+                # but not yet annotated, or annotations_dir changed) --
+                # fall back to the conventional naming patterns, checked
+                # in the same order Phase 1 vs. the older convention
+                # would produce them.
+                candidate_template = annotations_dir / f"annotation_template_{m}.csv"
+                candidate_legacy = annotations_dir / f"{m}_annotated.csv"
+                resolved_annotation_files[m] = (
+                    candidate_template if candidate_template.exists() else candidate_legacy
+                )
 
     # ---- Rebind to the names the rest of this function already uses ----
     # (everything below this point is unchanged from before this function
