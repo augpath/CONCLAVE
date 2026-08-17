@@ -124,7 +124,7 @@ runs what's new or missing (e.g. you add a clustering method, only that method r
 scratch instead.
 
 **If one clustering method fails, the others aren't lost.** A single method failing (e.g. R
-isn't installed for `flowsom`/`depeche`) no longer aborts the whole clustering step — it's
+isn't installed for `flowsom`/`depeche`) doesn't abort the whole clustering step; it's
 logged clearly, skipped, and the remaining methods still run and get saved. Check
 `metadata["results"]["failed_methods"]` (or the final log summary, which shows
 `⚠️ PIPELINE COMPLETE -- WITH FAILURES` instead of a clean `✅` when this happens) for what
@@ -135,7 +135,7 @@ For a guided, runnable walkthrough (including how to pick markers by inspecting 
 
 Prefer plain scripts over notebooks? See [`examples/`](examples/): `run_phase1.py`, `run_phase2.py`
 (auto-generates placeholder annotations if you haven't annotated yet, so it's runnable
-end-to-end out of the box — clearly not real biology, just for seeing the pipeline run), and
+end-to-end out of the box and clearly not real biology, just for seeing the pipeline run), and
 `run_full_pipeline.py` (chains both). Includes a real 71MB sample dataset
 (`Melanoma_example.csv`) to try them against immediately.
 
@@ -216,9 +216,6 @@ p2.KNN_K = 25
 df_labeled, template, single_templates, report = p2.run_phase2_complete()
 ```
 
-This still works exactly as before — kept for backward compatibility — but the function-argument
-form above is recommended for new code.
-</details>
 
 **Phase 2 Outputs:**
 ```
@@ -319,9 +316,6 @@ conda install -c rapidsai cuml=26.02 cuda-version=12.2 -y
 - Use fewer clustering methods
 - Increase RAM allocation
 
-## Citation
-
-If you use CONCLAVE in your research, please cite:
 
 ```
 [Citation information to be added upon publication]
@@ -337,7 +331,7 @@ See [CONTRIBUTING.md](https://github.com/augpath/CONCLAVE/blob/main/CONTRIBUTING
 
 - **Issues**: https://github.com/augpath/CONCLAVE/issues
 - **Discussions**: https://github.com/augpath/CONCLAVE/discussions
-- **Email**: (contact info to be added)
+- **Email**: pouya.nazari@student.kuleuven.be
 
 ## Changelog
 
