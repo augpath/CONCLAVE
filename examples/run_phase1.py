@@ -28,6 +28,12 @@ MARKERS = [
 # ⚙️ config -- edit these to change what Phase 1 runs
 CLUSTER_METHODS = ["phenograph", "kmeans"]
 
+# By default, re-running this script RESUMES from wherever the last run
+# left off (skips already-completed steps/methods, only runs what's new
+# or missing). Set FORCE_RESTART = True to ignore all existing checkpoints
+# in OUTDIR and start completely from scratch instead.
+FORCE_RESTART = False
+
 # FlowSOM and DepecheR ship with the package as R scripts -- their path is
 # auto-detected below, no copy-pasting needed. You still need R itself,
 # plus the FlowSOM/DepecheR R packages, installed separately. Both are
@@ -50,6 +56,8 @@ def main():
     df = pd.read_csv(CSV_PATH)
     print(f"Loaded {len(df):,} cells x {df.shape[1]} columns")
     print(f"Cluster methods: {CLUSTER_METHODS}")
+    if FORCE_RESTART:
+        print("FORCE_RESTART=True -- ignoring any existing checkpoints, starting fresh")
 
     df_clustered, metadata = run_annotation_pipeline_with_resume(
         df=df,
@@ -64,17 +72,30 @@ def main():
         derive_kmeans_from="phenograph",
         flowsom_rscript=FLOWSOM_RSCRIPT if USE_FLOWSOM else None,
         depeche_rscript=DEPECHE_RSCRIPT if USE_DEPECHE else None,
+        resume=not FORCE_RESTART,
+        force_restart=FORCE_RESTART,
     )
 
     print()
     print(f"Clustered {len(df_clustered):,} cells")
-    print(f"Cluster counts: {metadata['results']['cluster_counts']}")
+    print(f"Cluster counts (succeeded): {metadata['results']['cluster_counts']}")
+
+    failed = metadata["results"].get("failed_methods", {})
+    if failed:
+        print()
+        print("⚠️  Some methods FAILED and were skipped (already-successful methods were")
+        print("   NOT lost -- this used to abort the whole run and discard everything):")
+        for m, err in failed.items():
+            print(f"    {m}: {err}")
+        print("   Fix the underlying issue, then re-run this script (resume picks up")
+        print("   only the failed methods, everything else is skipped as already done).")
+
     print()
     print("Next step: annotate the clusters.")
     print(f"  1. Review the heatmaps in {OUTDIR / '04_cluster_heatmaps'}")
-    print(f"  2. Fill in the 'annotation' column of each annotation_template_<method>.csv")
-    print(f"  3. Save your filled-in files into {SCRIPT_DIR / 'annotations'} as <method>_annotated.csv")
-    print(f"  4. Run run_phase2.py")
+    print(f"  2. Fill in the 'annotation' column of each file in {OUTDIR / 'annotations'}")
+    print(f"     (already copied there for you -- no need to create the folder yourself)")
+    print(f"  3. Run run_phase2.py")
 
 
 if __name__ == "__main__":

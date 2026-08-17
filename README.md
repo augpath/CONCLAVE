@@ -117,6 +117,20 @@ df_clustered, metadata = run_annotation_pipeline_with_resume(
 print(f"✅ Clustered {len(df_clustered):,} cells")
 ```
 
+**Resuming and starting fresh.** `run_annotation_pipeline_with_resume()` defaults to
+`resume=True` — re-running with the same `outdir` skips whatever's already completed and only
+runs what's new or missing (e.g. you add a clustering method, only that method runs). Pass
+`force_restart=True` to ignore all existing checkpoints in `outdir` and start completely from
+scratch instead.
+
+**If one clustering method fails, the others aren't lost.** A single method failing (e.g. R
+isn't installed for `flowsom`/`depeche`) no longer aborts the whole clustering step — it's
+logged clearly, skipped, and the remaining methods still run and get saved. Check
+`metadata["results"]["failed_methods"]` (or the final log summary, which shows
+`⚠️ PIPELINE COMPLETE -- WITH FAILURES` instead of a clean `✅` when this happens) for what
+failed and why. Fix the issue and re-run with `resume=True` (the default) to retry just the
+failed method(s) — no need to redo anything that already succeeded.
+
 For a guided, runnable walkthrough (including how to pick markers by inspecting your own CSV, and every normalization/sampling/DR/clustering option with its hyperparameters), see [`notebooks/CONCLAVE_Phase1.ipynb`](notebooks/CONCLAVE_Phase1.ipynb) and [`notebooks/CONCLAVE_Phase1_Reference.ipynb`](notebooks/CONCLAVE_Phase1_Reference.ipynb) in this repo. For Phase 2, see [`notebooks/CONCLAVE_Phase2.ipynb`](notebooks/CONCLAVE_Phase2.ipynb), which includes pre-flight validation of your annotation files.
 
 Prefer plain scripts over notebooks? See [`examples/`](examples/): `run_phase1.py`, `run_phase2.py`

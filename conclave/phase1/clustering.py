@@ -526,6 +526,7 @@ def cluster_annotation_subset(
     labels_dict = {}
     cluster_counts = {}
     runtimes = {}
+    failed_methods = {}
     
     # Run each method
     for method in methods:
@@ -620,9 +621,19 @@ def cluster_annotation_subset(
                 logger.info(f"✅ {method.capitalize()} complete → {cluster_counts[method]} clusters | runtime={runtimes[method]:.2f}s")
         
         except Exception as e:
+            failed_methods[method] = str(e)
             if logger:
                 logger.error(f"❌ {method.capitalize()} failed: {e}")
-            raise
+                logger.warning(
+                    f"⚠️  Skipping '{method}' and continuing with the remaining methods "
+                    f"(this used to abort the entire clustering step, silently losing "
+                    f"already-completed methods -- it no longer does)"
+                )
+            continue
+
+    if not labels_dict:
+        failure_summary = "; ".join(f"{m}: {err}" for m, err in failed_methods.items())
+        raise RuntimeError(f"All requested clustering methods failed. {failure_summary}")
     
     # Add labels to dataframe
     df_labeled = df.copy()
@@ -647,6 +658,7 @@ def cluster_annotation_subset(
         "methods": methods,
         "cluster_counts": cluster_counts,
         "runtimes": runtimes,
+        "failed_methods": failed_methods,
         "total_runtime": float(time.time() - t0),
         "n_cells": int(len(df)),
         "n_features": int(len(feat_cols))
@@ -656,10 +668,11 @@ def cluster_annotation_subset(
     with open(meta_path, "w") as f:
         json.dump(clust_meta, f, indent=2)
     
-    # Summary CSV
+    # Summary CSV (only methods that actually succeeded -- failed_methods
+    # never got a cluster_counts/runtimes entry to begin with)
     summary_df = pd.DataFrame([
         {"method": m, "n_clusters": cluster_counts[m], "runtime_sec": runtimes[m]}
-        for m in methods
+        for m in labels_dict.keys()
     ])
     summary_df.to_csv(clust_dir / "meta_cluster_summary.csv", index=False)
     

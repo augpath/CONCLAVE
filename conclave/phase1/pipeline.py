@@ -432,10 +432,18 @@ def run_annotation_pipeline(
         )
         
         save_checkpoint(outdir, 'clustering', {
-            'methods': list(cluster_methods),
+            'methods': list(clust_meta.get('cluster_counts', {}).keys()),  # methods that actually succeeded, not just requested
             'cluster_counts': clust_meta.get('cluster_counts', {}),
+            'failed_methods': clust_meta.get('failed_methods', {}),
             'file': str(clust_checkpoint)
         }, logger)
+        
+        if clust_meta.get('failed_methods'):
+            logger.warning("")
+            logger.warning("⚠️  Some clustering methods failed and were skipped:")
+            for m, err in clust_meta['failed_methods'].items():
+                logger.warning(f"    {m}: {err}")
+            logger.warning("  Fix the underlying issue and re-run to retry just these methods.")
         
     # ================================================================
     # STEP 6: Visualization
@@ -557,6 +565,7 @@ def run_annotation_pipeline(
         "results": {
             "cluster_counts": clust_meta.get("cluster_counts", {}),
             "runtimes": clust_meta.get("runtimes", {}),
+            "failed_methods": clust_meta.get("failed_methods", {}),
         },
         "outputs": {
             "normalization_report": str(outdir / "00_sanitycheck" / "normalization_report.json"),
@@ -579,11 +588,21 @@ def run_annotation_pipeline(
     # Final summary
     logger.info("")
     logger.info("="*80)
-    logger.info("✅ PIPELINE COMPLETE!")
+    if final_meta["results"]["failed_methods"]:
+        logger.info("⚠️  PIPELINE COMPLETE -- WITH FAILURES")
+    else:
+        logger.info("✅ PIPELINE COMPLETE!")
     logger.info("="*80)
     logger.info(f"Processed: {len(df):,} → {len(df_labeled):,} cells")
-    logger.info(f"Clustering methods: {list(labels_dict.keys())}")
+    logger.info(f"Clustering methods (succeeded): {list(labels_dict.keys())}")
     logger.info(f"Cluster counts: {final_meta['results']['cluster_counts']}")
+    if final_meta["results"]["failed_methods"]:
+        logger.info("")
+        logger.info("⚠️  FAILED METHODS (skipped, not included above):")
+        for m, err in final_meta["results"]["failed_methods"].items():
+            logger.info(f"    {m}: {err}")
+        logger.info("  Fix the underlying issue and re-run with resume=True to retry just these.")
+        logger.info("")
     logger.info(f"Output directory: {outdir}")
     if _resume:
         logger.info("Resume mode was active - some steps may have been skipped")
