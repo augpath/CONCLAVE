@@ -51,3 +51,4 @@ output*/
 !examples/Melanoma_example.csv
 *.h5
 *.hdf5
+*.pdf
