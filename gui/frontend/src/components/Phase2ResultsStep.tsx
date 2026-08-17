@@ -4,9 +4,10 @@ import { listPhase2Plots, plotUrl, downloadUrl, type JobStatus } from "../api";
 interface Props {
   jobId: string;
   job: JobStatus;
+  onBack: () => void;
 }
 
-export default function Phase2ResultsStep({ jobId, job }: Props) {
+export default function Phase2ResultsStep({ jobId, job, onBack }: Props) {
   const [plots, setPlots] = useState<string[]>([]);
 
   useEffect(() => {
@@ -74,6 +75,12 @@ export default function Phase2ResultsStep({ jobId, job }: Props) {
             <span>{p}</span>
           </div>
         ))}
+      </div>
+
+      <div className="button-row">
+        <button className="secondary" onClick={onBack}>
+          ← Back to Phase 2 config
+        </button>
       </div>
     </div>
   );

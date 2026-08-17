@@ -7,6 +7,12 @@ import Phase1ReviewStep from "./components/Phase1ReviewStep";
 import Phase2ConfigStep from "./components/Phase2ConfigStep";
 import Phase2ResultsStep from "./components/Phase2ResultsStep";
 import type { JobStatus, UploadResponse } from "./api";
+import {
+  defaultPhase1FormValues,
+  defaultPhase2FormValues,
+  type Phase1FormValues,
+  type Phase2FormValues,
+} from "./formTypes";
 
 type Step =
   | "upload"
@@ -36,16 +42,22 @@ const STEP_ORDER: Step[] = [
   "phase2_results",
 ];
 
+const NON_MARKER_HINT = ["OID", "X", "Y", "ID", "AID", "cell_id"];
+
 export default function App() {
   const [step, setStep] = useState<Step>("upload");
   const [upload, setUpload] = useState<UploadResponse | null>(null);
+
+  const [phase1Values, setPhase1Values] = useState<Phase1FormValues | null>(null);
   const [phase1JobId, setPhase1JobId] = useState<string | null>(null);
   const [phase1Job, setPhase1Job] = useState<JobStatus | null>(null);
   const [annotatedMethods, setAnnotatedMethods] = useState<string[]>([]);
+
+  const [phase2Values, setPhase2Values] = useState<Phase2FormValues>(defaultPhase2FormValues([]));
   const [phase2JobId, setPhase2JobId] = useState<string | null>(null);
   const [phase2Job, setPhase2Job] = useState<JobStatus | null>(null);
 
-  const sampleColsUsedInPhase1: string[] = []; // read back from phase1Job.result if needed later
+  const sampleColsUsedInPhase1: string[] = phase1Values?.sampleCols ?? [];
 
   return (
     <div className="app">
@@ -67,18 +79,22 @@ export default function App() {
           <UploadStep
             onUploaded={(res) => {
               setUpload(res);
+              setPhase1Values(defaultPhase1FormValues(res.columns, NON_MARKER_HINT));
               setStep("phase1_config");
             }}
           />
         )}
 
-        {step === "phase1_config" && upload && (
+        {step === "phase1_config" && upload && phase1Values && (
           <Phase1ConfigStep
             upload={upload}
+            values={phase1Values}
+            onChange={setPhase1Values}
             onStarted={(jobId) => {
               setPhase1JobId(jobId);
               setStep("phase1_running");
             }}
+            onBack={() => setStep("upload")}
           />
         )}
 
@@ -88,7 +104,16 @@ export default function App() {
             title="Running Phase 1…"
             onDone={(job) => {
               setPhase1Job(job);
-              if (job.status === "completed") setStep("phase1_review");
+              if (job.status === "completed") {
+                // Backfill the actual output directory into the form, and
+                // default to resuming next time -- so going back and
+                // adding a method, then re-running, naturally resumes
+                // instead of starting over.
+                if (job.outdir && phase1Values) {
+                  setPhase1Values({ ...phase1Values, outdir: job.outdir, forceRestart: false });
+                }
+                setStep("phase1_review");
+              }
             }}
           />
         )}
@@ -104,8 +129,10 @@ export default function App() {
             jobId={phase1JobId}
             onContinue={(methods) => {
               setAnnotatedMethods(methods);
+              setPhase2Values((prev) => ({ ...prev, methods }));
               setStep("phase2_config");
             }}
+            onBack={() => setStep("phase1_config")}
           />
         )}
 
@@ -114,10 +141,13 @@ export default function App() {
             phase1JobId={phase1JobId}
             annotatedMethods={annotatedMethods}
             sampleColsUsedInPhase1={sampleColsUsedInPhase1}
+            values={phase2Values}
+            onChange={setPhase2Values}
             onStarted={(jobId) => {
               setPhase2JobId(jobId);
               setStep("phase2_running");
             }}
+            onBack={() => setStep("phase1_review")}
           />
         )}
 
@@ -127,7 +157,12 @@ export default function App() {
             title="Running Phase 2…"
             onDone={(job) => {
               setPhase2Job(job);
-              if (job.status === "completed") setStep("phase2_results");
+              if (job.status === "completed") {
+                if (job.outdir) {
+                  setPhase2Values((prev) => ({ ...prev, outdir: job.outdir! }));
+                }
+                setStep("phase2_results");
+              }
             }}
           />
         )}
@@ -139,7 +174,11 @@ export default function App() {
         )}
 
         {step === "phase2_results" && phase2JobId && phase2Job && (
-          <Phase2ResultsStep jobId={phase2JobId} job={phase2Job} />
+          <Phase2ResultsStep
+            jobId={phase2JobId}
+            job={phase2Job}
+            onBack={() => setStep("phase2_config")}
+          />
         )}
       </main>
     </div>

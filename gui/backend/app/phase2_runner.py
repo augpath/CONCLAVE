@@ -1,5 +1,10 @@
-"""Wraps conclave.phase2 for the GUI job manager."""
-import json
+"""Wraps conclave.phase2 for the GUI job manager.
+
+Uses the modern run_phase2_complete() function-argument API directly --
+markers/sample_cols auto-detect from Phase 1's own pipeline_run_config.json
+(written by the core package), so this no longer needs its own separate
+gui_config.json bookkeeping.
+"""
 from pathlib import Path
 from typing import List, Optional
 
@@ -13,50 +18,46 @@ def run_phase2_job(
     sample_cols: Optional[List[str]],
     template_max_per_label: int,
 ):
-    import conclave.phase2.pipeline_complete as p2
+    from conclave.phase2.pipeline_complete import run_phase2_complete
 
     phase1_outdir_p = Path(phase1_outdir)
     outdir_p = Path(outdir)
 
-    cfg_path = phase1_outdir_p / "gui_config.json"
-    if not cfg_path.exists():
-        raise ValueError(
-            f"No gui_config.json found in {phase1_outdir_p} -- was this a "
-            f"Phase 1 job run through the GUI?"
-        )
-    with open(cfg_path) as f:
-        cfg = json.load(f)
-    markers = cfg["markers"]
+    if not phase1_outdir_p.exists():
+        raise ValueError(f"Phase 1 output directory not found: {phase1_outdir_p}")
 
     annotations_dir = phase1_outdir_p / "annotations"
-    ann_files = {m: annotations_dir / f"{m}_annotated.csv" for m in methods}
-    missing = [m for m, p in ann_files.items() if not p.exists()]
+    # A lightweight pre-check for a clearer error message than the
+    # underlying pipeline would give -- run_phase2_complete() itself also
+    # checks for annotation files (supporting both the annotation_template_
+    # and *_annotated.csv naming conventions), this just fails faster with
+    # a GUI-relevant message before committing to a full run.
+    missing = []
+    for m in methods:
+        candidates = [
+            annotations_dir / f"annotation_template_{m}.csv",
+            annotations_dir / f"{m}_annotated.csv",
+        ]
+        if not any(c.exists() for c in candidates):
+            missing.append(m)
     if missing:
         raise ValueError(
-            f"Missing saved annotations for: {missing}. "
-            f"Annotate and save them in the Phase 1 review step first."
+            f"Missing annotations for: {missing}. "
+            f"Annotate and save them in the Phase 1 review step first, or "
+            f"upload an already-annotated CSV for that method."
         )
 
-    p2.PHASE1_OUTPUT = phase1_outdir_p
-    p2.PHASE2_OUTPUT = outdir_p
-    p2.ANNOTATIONS_DIR = annotations_dir
-    p2.CLUSTERED_FILE = (
-        phase1_outdir_p / "03_clustering_annotation" / "clustered_subset_with_labels_on_sampled.csv"
+    df_labeled, template, single_templates, report = run_phase2_complete(
+        phase1_output=str(phase1_outdir_p),
+        phase2_output=str(outdir_p),
+        annotations_dir=str(annotations_dir),
+        consensus_methods=methods,
+        knn_k=knn_k,
+        min_votes=min_votes,
+        sample_cols=sample_cols or None,
+        template_max_per_label=template_max_per_label,
+        # markers not passed -- auto-loaded from phase1_outdir/pipeline_run_config.json
     )
-    p2.FULL_DATA_FILE = phase1_outdir_p / "01_normalized_full.csv"
-    p2.ANNOTATION_FILES = ann_files
-    p2.MARKERS = markers
-    p2.CONSENSUS_METHODS = methods
-    p2.KNN_K = knn_k
-    p2.MIN_VOTES = min_votes
-    p2.SAMPLE_COLS = sample_cols or cfg.get("sample_cols") or []
-    p2.TEMPLATE_MAX_PER_LABEL = template_max_per_label
-
-    outdir_p.mkdir(parents=True, exist_ok=True)
-    (outdir_p / "templates").mkdir(exist_ok=True)
-    (outdir_p / "plots").mkdir(exist_ok=True)
-
-    df_labeled, template, single_templates, report = p2.run_phase2_complete()
 
     return {
         "n_cells": int(len(df_labeled)),

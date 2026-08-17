@@ -52,6 +52,8 @@ class Job:
         self.created_at = time.time()
         self.started_at: Optional[float] = None
         self.finished_at: Optional[float] = None
+        self.outdir: Optional[str] = None  # actual filesystem path this job writes to
+        self.label: Optional[str] = None  # optional user-friendly name, for job pickers
 
 
 class JobManager:
@@ -74,6 +76,13 @@ class JobManager:
     def get(self, job_id: str) -> Optional[Job]:
         with self._lock:
             return self._jobs.get(job_id)
+
+    def list(self, kind: Optional[str] = None) -> List[Job]:
+        with self._lock:
+            jobs = list(self._jobs.values())
+        if kind:
+            jobs = [j for j in jobs if j.kind == kind]
+        return sorted(jobs, key=lambda j: j.created_at, reverse=True)
 
     def _worker_loop(self) -> None:
         while True:

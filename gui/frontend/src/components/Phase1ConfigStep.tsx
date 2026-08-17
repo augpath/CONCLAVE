@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { startPhase1, type Phase1Request, type UploadResponse } from "../api";
+import type { Phase1FormValues } from "../formTypes";
 
 interface Props {
   upload: UploadResponse;
+  values: Phase1FormValues;
+  onChange: (values: Phase1FormValues) => void;
   onStarted: (jobId: string) => void;
+  onBack: () => void;
 }
 
-const NON_MARKER_HINT = ["OID", "X", "Y", "ID", "AID", "cell_id"];
 const NORMALIZATION_OPTIONS = ["z-score", "lognorm", "minmax", "iqr-zscore", "iqr-minmax", "none"];
 const SAMPLING_OPTIONS = [
   "stratified-notproportional",
@@ -37,42 +40,28 @@ const NEEDS_DERIVED_N_CLUSTERS = new Set([
   "birch",
 ]);
 
-export default function Phase1ConfigStep({ upload, onStarted }: Props) {
-  const [markers, setMarkers] = useState<Set<string>>(
-    new Set(upload.columns.filter((c) => !NON_MARKER_HINT.includes(c)))
-  );
-  const [sampleCols, setSampleCols] = useState<Set<string>>(new Set());
-  const [normalization, setNormalization] = useState("z-score");
-  const [sampling, setSampling] = useState("stratified-notproportional");
-  const [sampleSize, setSampleSize] = useState(20000);
-  const [drMethod, setDrMethod] = useState("none");
-  const [clusterMethods, setClusterMethods] = useState<Set<string>>(
-    new Set(["phenograph", "kmeans"])
-  );
-  const [phenographK, setPhenographK] = useState(25);
-  const [flowsomRscript, setFlowsomRscript] = useState("");
-  const [depecheRscript, setDepecheRscript] = useState("");
-  const [seed, setSeed] = useState(42);
+export default function Phase1ConfigStep({ upload, values: v, onChange, onStarted, onBack }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function toggle(set: Set<string>, setSet: (s: Set<string>) => void, item: string) {
-    const next = new Set(set);
-    if (next.has(item)) next.delete(item);
-    else next.add(item);
-    setSet(next);
+  function update(patch: Partial<Phase1FormValues>) {
+    onChange({ ...v, ...patch });
   }
 
-  const usesDerivedNClusters = [...clusterMethods].some((m) => NEEDS_DERIVED_N_CLUSTERS.has(m));
-  const needsPhenographForDerive = usesDerivedNClusters && !clusterMethods.has("phenograph");
+  function toggleInList(list: string[], item: string): string[] {
+    return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
+  }
+
+  const usesDerivedNClusters = v.clusterMethods.some((m) => NEEDS_DERIVED_N_CLUSTERS.has(m));
+  const needsPhenographForDerive = usesDerivedNClusters && !v.clusterMethods.includes("phenograph");
 
   async function handleSubmit() {
     setError(null);
-    if (markers.size === 0) {
+    if (v.markers.length === 0) {
       setError("Select at least one marker.");
       return;
     }
-    if (clusterMethods.size === 0) {
+    if (v.clusterMethods.length === 0) {
       setError("Select at least one clustering method.");
       return;
     }
@@ -80,20 +69,22 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
     try {
       const req: Phase1Request = {
         upload_id: upload.upload_id,
-        markers: [...markers],
-        sample_cols: [...sampleCols],
-        normalization: normalization === "none" ? null : normalization,
-        sampling,
-        sample_size: sampleSize,
+        markers: v.markers,
+        sample_cols: v.sampleCols,
+        normalization: v.normalization === "none" ? null : v.normalization,
+        sampling: v.sampling,
+        sample_size: v.sampleSize,
         n_tiles_per_axis: 4,
-        dr_method: drMethod === "none" ? null : drMethod,
+        dr_method: v.drMethod === "none" ? null : v.drMethod,
         dr_n_components: 15,
-        cluster_methods: [...clusterMethods],
-        phenograph_k: phenographK,
+        cluster_methods: v.clusterMethods,
+        phenograph_k: v.phenographK,
         derive_kmeans_from: usesDerivedNClusters ? "phenograph" : null,
-        flowsom_rscript: clusterMethods.has("flowsom") ? flowsomRscript || null : null,
-        depeche_rscript: clusterMethods.has("depeche") ? depecheRscript || null : null,
-        seed,
+        flowsom_rscript: v.clusterMethods.includes("flowsom") ? v.flowsomRscript || null : null,
+        depeche_rscript: v.clusterMethods.includes("depeche") ? v.depecheRscript || null : null,
+        seed: v.seed,
+        outdir: v.outdir.trim() || null,
+        force_restart: v.forceRestart,
       };
       const { job_id } = await startPhase1(req);
       onStarted(job_id);
@@ -109,14 +100,14 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
       <h2>2. Configure Phase 1</h2>
 
       <fieldset>
-        <legend>Markers ({markers.size} selected)</legend>
+        <legend>Markers ({v.markers.length} selected)</legend>
         <div className="chip-grid">
           {upload.columns.map((col) => (
-            <label key={col} className={`chip ${markers.has(col) ? "chip-on" : ""}`}>
+            <label key={col} className={`chip ${v.markers.includes(col) ? "chip-on" : ""}`}>
               <input
                 type="checkbox"
-                checked={markers.has(col)}
-                onChange={() => toggle(markers, setMarkers, col)}
+                checked={v.markers.includes(col)}
+                onChange={() => update({ markers: toggleInList(v.markers, col) })}
               />
               {col}
             </label>
@@ -132,11 +123,11 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
         </p>
         <div className="chip-grid">
           {upload.columns.map((col) => (
-            <label key={col} className={`chip ${sampleCols.has(col) ? "chip-on" : ""}`}>
+            <label key={col} className={`chip ${v.sampleCols.includes(col) ? "chip-on" : ""}`}>
               <input
                 type="checkbox"
-                checked={sampleCols.has(col)}
-                onChange={() => toggle(sampleCols, setSampleCols, col)}
+                checked={v.sampleCols.includes(col)}
+                onChange={() => update({ sampleCols: toggleInList(v.sampleCols, col) })}
               />
               {col}
             </label>
@@ -149,7 +140,7 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
         <div className="form-grid">
           <label>
             Normalization
-            <select value={normalization} onChange={(e) => setNormalization(e.target.value)}>
+            <select value={v.normalization} onChange={(e) => update({ normalization: e.target.value })}>
               {NORMALIZATION_OPTIONS.map((o) => (
                 <option key={o} value={o}>
                   {o}
@@ -159,7 +150,7 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
           </label>
           <label>
             Sampling mode
-            <select value={sampling} onChange={(e) => setSampling(e.target.value)}>
+            <select value={v.sampling} onChange={(e) => update({ sampling: e.target.value })}>
               {SAMPLING_OPTIONS.map((o) => (
                 <option key={o} value={o}>
                   {o}
@@ -171,14 +162,14 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
             Sample size
             <input
               type="number"
-              value={sampleSize}
+              value={v.sampleSize}
               min={100}
-              onChange={(e) => setSampleSize(Number(e.target.value))}
+              onChange={(e) => update({ sampleSize: Number(e.target.value) })}
             />
           </label>
           <label>
             Dimensionality reduction
-            <select value={drMethod} onChange={(e) => setDrMethod(e.target.value)}>
+            <select value={v.drMethod} onChange={(e) => update({ drMethod: e.target.value })}>
               {DR_OPTIONS.map((o) => (
                 <option key={o} value={o}>
                   {o}
@@ -190,27 +181,56 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
             PhenoGraph k
             <input
               type="number"
-              value={phenographK}
+              value={v.phenographK}
               min={2}
-              onChange={(e) => setPhenographK(Number(e.target.value))}
+              onChange={(e) => update({ phenographK: Number(e.target.value) })}
             />
           </label>
           <label>
             Random seed
-            <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value))} />
+            <input type="number" value={v.seed} onChange={(e) => update({ seed: Number(e.target.value) })} />
           </label>
         </div>
       </fieldset>
 
       <fieldset>
-        <legend>Clustering methods ({clusterMethods.size} selected)</legend>
+        <legend>Output &amp; resuming</legend>
+        <div className="form-grid">
+          <label className="full-width">
+            Output directory (optional)
+            <input
+              type="text"
+              value={v.outdir}
+              onChange={(e) => update({ outdir: e.target.value })}
+              placeholder="leave blank to use an auto-generated location"
+            />
+          </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={v.forceRestart}
+              onChange={(e) => update({ forceRestart: e.target.checked })}
+            />
+            Force restart (ignore any existing checkpoints in the output directory above)
+          </label>
+        </div>
+        {!v.forceRestart && (
+          <p className="muted">
+            Resuming: if the output directory already has a completed or partial Phase 1 run,
+            already-finished steps/methods are skipped and only what's new or missing runs.
+          </p>
+        )}
+      </fieldset>
+
+      <fieldset>
+        <legend>Clustering methods ({v.clusterMethods.length} selected)</legend>
         <div className="chip-grid">
           {CLUSTER_METHOD_OPTIONS.map((m) => (
-            <label key={m} className={`chip ${clusterMethods.has(m) ? "chip-on" : ""}`}>
+            <label key={m} className={`chip ${v.clusterMethods.includes(m) ? "chip-on" : ""}`}>
               <input
                 type="checkbox"
-                checked={clusterMethods.has(m)}
-                onChange={() => toggle(clusterMethods, setClusterMethods, m)}
+                checked={v.clusterMethods.includes(m)}
+                onChange={() => update({ clusterMethods: toggleInList(v.clusterMethods, m) })}
               />
               {m}
             </label>
@@ -222,29 +242,29 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
             PhenoGraph — add "phenograph" too, or they'll fail.
           </p>
         )}
-        {clusterMethods.has("flowsom") && (
+        {v.clusterMethods.includes("flowsom") && (
           <label className="full-width">
             FlowSOM R script path (leave blank to use the bundled one)
             <input
               type="text"
-              value={flowsomRscript}
-              onChange={(e) => setFlowsomRscript(e.target.value)}
+              value={v.flowsomRscript}
+              onChange={(e) => update({ flowsomRscript: e.target.value })}
               placeholder="/path/to/flowsom_clustering.R"
             />
           </label>
         )}
-        {clusterMethods.has("depeche") && (
+        {v.clusterMethods.includes("depeche") && (
           <label className="full-width">
             DepecheR R script path (leave blank to use the bundled one)
             <input
               type="text"
-              value={depecheRscript}
-              onChange={(e) => setDepecheRscript(e.target.value)}
+              value={v.depecheRscript}
+              onChange={(e) => update({ depecheRscript: e.target.value })}
               placeholder="/path/to/depeche_clustering.R"
             />
           </label>
         )}
-        {(clusterMethods.has("flowsom") || clusterMethods.has("depeche")) && (
+        {(v.clusterMethods.includes("flowsom") || v.clusterMethods.includes("depeche")) && (
           <p className="muted">
             Requires R and the FlowSOM/DepecheR R packages installed in the backend container —
             see the GUI README.
@@ -253,9 +273,14 @@ export default function Phase1ConfigStep({ upload, onStarted }: Props) {
       </fieldset>
 
       {error && <p className="error">Error: {error}</p>}
-      <button disabled={busy} onClick={handleSubmit}>
-        {busy ? "Starting…" : "Run Phase 1"}
-      </button>
+      <div className="button-row">
+        <button className="secondary" disabled={busy} onClick={onBack}>
+          ← Back
+        </button>
+        <button disabled={busy} onClick={handleSubmit}>
+          {busy ? "Starting…" : "Run Phase 1"}
+        </button>
+      </div>
     </div>
   );
 }

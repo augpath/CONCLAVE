@@ -6,11 +6,12 @@ local tool (see gui/README.md).
 """
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -37,6 +38,27 @@ def _safe_component(name: str) -> str:
     return name
 
 
+def _resolve_outdir(custom_outdir: Optional[str], default_dir: Path, job_id: str) -> Path:
+    """A custom path is used as-is (advanced use: point at a directory you
+    also use from the CLI/notebooks, or want to find easily on disk).
+    Otherwise falls back to the GUI's own UUID-per-job convention."""
+    if custom_outdir:
+        return Path(custom_outdir)
+    return default_dir / job_id
+
+
+def _job_summary(job) -> dict:
+    return {
+        "id": job.id,
+        "kind": job.kind,
+        "status": job.status,
+        "label": job.label,
+        "outdir": job.outdir,
+        "created_at": job.created_at,
+        "result": job.result,
+    }
+
+
 app = FastAPI(title="CONCLAVE GUI API")
 app.add_middleware(
     CORSMiddleware,
@@ -52,7 +74,6 @@ app.add_middleware(
 @app.post("/api/upload")
 async def upload_csv(file: UploadFile = File(...)):
     import shutil
-    import uuid
 
     upload_id = str(uuid.uuid4())
     dest = UPLOADS_DIR / f"{upload_id}.csv"
@@ -86,7 +107,17 @@ async def get_job(job_id: str):
         "logs": job.logs[-1000:],
         "error": job.error,
         "result": job.result,
+        "outdir": job.outdir,
     }
+
+
+@app.get("/api/phase1/jobs")
+async def list_phase1_jobs():
+    """List known Phase 1 jobs (most recent first) -- lets the frontend
+    offer 'use a previous run' when configuring Phase 2, including runs
+    from earlier in the same session that the user has since navigated
+    away from with the back button."""
+    return {"jobs": [_job_summary(j) for j in job_manager.list(kind="phase1")]}
 
 
 # ============================================================
@@ -108,6 +139,9 @@ class Phase1Request(BaseModel):
     flowsom_rscript: Optional[str] = None
     depeche_rscript: Optional[str] = None
     seed: int = 42
+    outdir: Optional[str] = None  # advanced: custom output path instead of the auto-generated one
+    force_restart: bool = True    # False resumes from any existing checkpoints in outdir
+    label: Optional[str] = None   # optional friendly name for job pickers
 
 
 @app.post("/api/phase1/jobs")
@@ -119,7 +153,10 @@ async def start_phase1(payload: Phase1Request):
         raise HTTPException(400, "No markers selected")
 
     job = job_manager.create("phase1")
-    outdir = PHASE1_DIR / job.id
+    job.label = payload.label
+    outdir = _resolve_outdir(payload.outdir, PHASE1_DIR, job.id)
+    job.outdir = str(outdir)
+
     job_manager.start(
         job,
         run_phase1_job,
@@ -139,14 +176,25 @@ async def start_phase1(payload: Phase1Request):
         flowsom_rscript=payload.flowsom_rscript,
         depeche_rscript=payload.depeche_rscript,
         seed=payload.seed,
+        force_restart=payload.force_restart,
     )
-    return {"job_id": job.id}
+    return {"job_id": job.id, "outdir": str(outdir)}
+
+
+def _phase1_outdir_for_job(job_id: str) -> Path:
+    job = job_manager.get(job_id)
+    if job and job.outdir:
+        return Path(job.outdir)
+    # Fall back to the default convention, e.g. for jobs from before this
+    # field existed
+    return PHASE1_DIR / job_id
 
 
 @app.get("/api/phase1/jobs/{job_id}/clusters")
 async def get_phase1_clusters(job_id: str):
     job_id = _safe_component(job_id)
-    heatmap_dir = PHASE1_DIR / job_id / "04_cluster_heatmaps"
+    outdir = _phase1_outdir_for_job(job_id)
+    heatmap_dir = outdir / "04_cluster_heatmaps"
     if not heatmap_dir.exists():
         raise HTTPException(404, "No results yet for this job")
 
@@ -160,19 +208,35 @@ async def get_phase1_clusters(job_id: str):
         df["annotation"] = df["annotation"].fillna("")
         clusters[m] = df.to_dict(orient="records")
 
-    # Report which methods already have saved annotations
-    ann_dir = PHASE1_DIR / job_id / "annotations"
-    annotated = sorted(
-        p.stem.replace("_annotated", "") for p in ann_dir.glob("*_annotated.csv")
-    ) if ann_dir.exists() else []
+    # Report which methods already have saved annotations (either saved
+    # in-browser or uploaded as a pre-annotated CSV) -- both naming
+    # conventions, matching what the core package itself now recognizes
+    ann_dir = outdir / "annotations"
+    annotated = set()
+    if ann_dir.exists():
+        for p in ann_dir.glob("*_annotated.csv"):
+            annotated.add(p.stem.replace("_annotated", ""))
+        for p in ann_dir.glob("annotation_template_*.csv"):
+            try:
+                df = pd.read_csv(p)
+                if "annotation" in df.columns and df["annotation"].notna().any():
+                    annotated.add(p.stem.replace("annotation_template_", ""))
+            except Exception:
+                pass
 
-    return {"methods": methods, "clusters": clusters, "annotated_methods": annotated}
+    return {
+        "methods": methods,
+        "clusters": clusters,
+        "annotated_methods": sorted(annotated),
+        "outdir": str(outdir),
+    }
 
 
 @app.get("/api/phase1/jobs/{job_id}/heatmap/{method}")
 async def get_heatmap_image(job_id: str, method: str):
     job_id, method = _safe_component(job_id), _safe_component(method)
-    path = PHASE1_DIR / job_id / "04_cluster_heatmaps" / f"heatmap_topN_ranked_{method}.png"
+    outdir = _phase1_outdir_for_job(job_id)
+    path = outdir / "04_cluster_heatmaps" / f"heatmap_topN_ranked_{method}.png"
     if not path.exists():
         raise HTTPException(404, "Heatmap not found")
     return FileResponse(path, media_type="image/png")
@@ -187,7 +251,8 @@ class AnnotationUpdate(BaseModel):
 async def save_annotations(job_id: str, payload: AnnotationUpdate):
     job_id = _safe_component(job_id)
     method = _safe_component(payload.method)
-    template_path = PHASE1_DIR / job_id / "04_cluster_heatmaps" / f"annotation_template_{method}.csv"
+    outdir = _phase1_outdir_for_job(job_id)
+    template_path = outdir / "04_cluster_heatmaps" / f"annotation_template_{method}.csv"
     if not template_path.exists():
         raise HTTPException(404, "No cluster template found for this method")
 
@@ -196,7 +261,7 @@ async def save_annotations(job_id: str, payload: AnnotationUpdate):
     df["annotation"] = df["cluster_id_str"].map(payload.annotations).fillna(df.get("annotation", ""))
     df = df.drop(columns=["cluster_id_str"])
 
-    ann_dir = PHASE1_DIR / job_id / "annotations"
+    ann_dir = outdir / "annotations"
     ann_dir.mkdir(exist_ok=True)
     df.to_csv(ann_dir / f"{method}_annotated.csv", index=False)
 
@@ -204,29 +269,103 @@ async def save_annotations(job_id: str, payload: AnnotationUpdate):
     return {"status": "saved", "n_clusters": len(df), "n_annotated": n_annotated}
 
 
+@app.post("/api/phase1/jobs/{job_id}/annotations/upload")
+async def upload_annotations(
+    job_id: str,
+    method: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """Alternative to in-browser annotation: upload a CSV you already
+    annotated separately (e.g. offline, or by someone else). Must have
+    'cluster_id' and 'annotation' columns, and the cluster_ids must match
+    this method's actual clusters from Phase 1 -- checked before saving,
+    so a mismatched file is rejected with a clear reason rather than
+    silently accepted."""
+    job_id = _safe_component(job_id)
+    method = _safe_component(method)
+    outdir = _phase1_outdir_for_job(job_id)
+    template_path = outdir / "04_cluster_heatmaps" / f"annotation_template_{method}.csv"
+    if not template_path.exists():
+        raise HTTPException(404, "No cluster template found for this method")
+
+    try:
+        uploaded = pd.read_csv(file.file)
+    except Exception as e:
+        raise HTTPException(400, f"Could not read CSV: {e}")
+
+    if "cluster_id" not in uploaded.columns:
+        raise HTTPException(400, "Uploaded CSV must have a 'cluster_id' column")
+    if "annotation" not in uploaded.columns:
+        raise HTTPException(400, "Uploaded CSV must have an 'annotation' column")
+
+    expected = pd.read_csv(template_path)
+    expected_ids = set(expected["cluster_id"].astype(str))
+    uploaded_ids = set(uploaded["cluster_id"].astype(str))
+
+    missing = expected_ids - uploaded_ids
+    extra = uploaded_ids - expected_ids
+    if missing:
+        raise HTTPException(
+            400,
+            f"Uploaded file is missing cluster_id(s) {sorted(missing)} that exist in "
+            f"this method's Phase 1 output.",
+        )
+    if extra:
+        raise HTTPException(
+            400,
+            f"Uploaded file has cluster_id(s) {sorted(extra)} that don't exist in "
+            f"this method's Phase 1 output (typo, or annotated against a different run?).",
+        )
+
+    n_blank = uploaded["annotation"].isna().sum() + (
+        uploaded["annotation"].astype(str).str.strip() == ""
+    ).sum()
+
+    ann_dir = outdir / "annotations"
+    ann_dir.mkdir(exist_ok=True)
+    save_cols = ["cluster_id", "n_cells", "annotation"] if "n_cells" in uploaded.columns else ["cluster_id", "annotation"]
+    uploaded[save_cols].to_csv(ann_dir / f"{method}_annotated.csv", index=False)
+
+    n_annotated = len(uploaded) - n_blank
+    return {"status": "saved", "n_clusters": len(uploaded), "n_annotated": int(n_annotated)}
+
+
 # ============================================================
 # Phase 2
 # ============================================================
 class Phase2Request(BaseModel):
-    phase1_job_id: str
+    phase1_job_id: Optional[str] = None   # use a job tracked by this GUI instance
+    phase1_outdir: Optional[str] = None   # OR point directly at any Phase 1 output directory
+                                           # (e.g. from the CLI/notebooks, or a different machine's mount)
     methods: List[str]
     knn_k: int = 25
     min_votes: int = 2
     sample_cols: List[str] = []
     template_max_per_label: int = 500
+    outdir: Optional[str] = None  # advanced: custom output path instead of the auto-generated one
+    label: Optional[str] = None
 
 
 @app.post("/api/phase2/jobs")
 async def start_phase2(payload: Phase2Request):
-    phase1_job_id = _safe_component(payload.phase1_job_id)
-    phase1_outdir = PHASE1_DIR / phase1_job_id
+    if not payload.phase1_job_id and not payload.phase1_outdir:
+        raise HTTPException(400, "Provide either phase1_job_id or phase1_outdir")
+
+    if payload.phase1_outdir:
+        phase1_outdir = Path(payload.phase1_outdir)
+    else:
+        phase1_outdir = _phase1_outdir_for_job(_safe_component(payload.phase1_job_id))
+
     if not phase1_outdir.exists():
-        raise HTTPException(404, "Phase 1 job not found")
+        raise HTTPException(404, f"Phase 1 output directory not found: {phase1_outdir}")
     if not payload.methods:
         raise HTTPException(400, "No methods selected")
 
     job = job_manager.create("phase2")
-    outdir = PHASE2_DIR / job.id
+    job.label = payload.label
+    outdir = _resolve_outdir(payload.outdir, PHASE2_DIR, job.id)
+    job.outdir = str(outdir)
+
     job_manager.start(
         job,
         run_phase2_job,
@@ -238,13 +377,20 @@ async def start_phase2(payload: Phase2Request):
         sample_cols=payload.sample_cols,
         template_max_per_label=payload.template_max_per_label,
     )
-    return {"job_id": job.id}
+    return {"job_id": job.id, "outdir": str(outdir)}
+
+
+def _phase2_outdir_for_job(job_id: str) -> Path:
+    job = job_manager.get(job_id)
+    if job and job.outdir:
+        return Path(job.outdir)
+    return PHASE2_DIR / job_id
 
 
 @app.get("/api/phase2/jobs/{job_id}/plots")
 async def list_phase2_plots(job_id: str):
     job_id = _safe_component(job_id)
-    plots_dir = PHASE2_DIR / job_id / "plots"
+    plots_dir = _phase2_outdir_for_job(job_id) / "plots"
     if not plots_dir.exists():
         raise HTTPException(404, "No plots yet for this job")
     return {"plots": sorted(p.name for p in plots_dir.glob("*.png"))}
@@ -253,7 +399,7 @@ async def list_phase2_plots(job_id: str):
 @app.get("/api/phase2/jobs/{job_id}/plot/{name}")
 async def get_phase2_plot(job_id: str, name: str):
     job_id, name = _safe_component(job_id), _safe_component(name)
-    path = PHASE2_DIR / job_id / "plots" / name
+    path = _phase2_outdir_for_job(job_id) / "plots" / name
     if not path.exists():
         raise HTTPException(404, "Plot not found")
     return FileResponse(path, media_type="image/png")
@@ -262,7 +408,7 @@ async def get_phase2_plot(job_id: str, name: str):
 @app.get("/api/phase2/jobs/{job_id}/download")
 async def download_phase2_csv(job_id: str):
     job_id = _safe_component(job_id)
-    path = PHASE2_DIR / job_id / "full_dataset_labeled_complete.csv"
+    path = _phase2_outdir_for_job(job_id) / "full_dataset_labeled_complete.csv"
     if not path.exists():
         raise HTTPException(404, "Result file not found")
     return FileResponse(path, filename="full_dataset_labeled_complete.csv")
