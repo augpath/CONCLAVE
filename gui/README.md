@@ -19,6 +19,20 @@ this folder.
 
 ## Running it
 
+**Two backend variants exist.** Most people should use the default one:
+
+- **`backend/Dockerfile`** (default) — fast to build (a minute or two), does not include R. All
+  10 native Python clustering methods work; `flowsom`/`depeche` will fail with a clear error if
+  selected.
+- **`backend/Dockerfile.with-r`** (optional) — includes R and compiles FlowSOM/DepecheR from
+  Bioconductor. Only build this if you specifically need those two methods — it commonly takes
+  20-40+ minutes and produces a much larger image. See [FlowSOM / DepecheR](#flowsom--depecher)
+  below.
+
+The instructions below default to the fast variant. Both variants use different image tags
+(`conclave-backend` vs `conclave-backend-r`) so you can build either, or both, without one
+overwriting the other.
+
 ### With Docker (recommended)
 
 ```bash
@@ -83,12 +97,17 @@ Then open the URL Vite prints (usually http://localhost:5173).
 
 ## FlowSOM / DepecheR
 
-The default backend Docker image does not include R — it uses a `python:3.11-slim` base to keep
-builds fast. To use `flowsom`/`depeche` as clustering methods, build the R-enabled variant
-instead:
+The default backend image (`conclave-backend`, built from `backend/Dockerfile`) does not include
+R — it uses a `python:3.11-slim` base to keep builds fast, and is what most people should use.
+`flowsom`/`depeche` will fail with a clear per-method error if selected (the rest of your
+clustering methods still complete normally — see "Partial failures" in the main README).
+
+To use `flowsom`/`depeche`, build the separate R-enabled image instead. This uses its own image
+tag (`conclave-backend-r`) so it never overwrites your fast default build — both can exist on
+your machine at once, and you choose which one to actually run.
 
 ```bash
-docker build --build-arg CACHEBUST=$(date +%s) -f backend/Dockerfile.with-r -t conclave-backend ./backend
+docker build --build-arg CACHEBUST=$(date +%s) -f backend/Dockerfile.with-r -t conclave-backend-r ./backend
 ```
 
 This installs R and compiles FlowSOM/DepecheR from Bioconductor, which is considerably slower
@@ -100,9 +119,16 @@ the `docker build` output will show which system library or R package failed to 
 the place to start debugging, and `Dockerfile.with-r`'s comments explain what each dependency is
 for.
 
-Once built, run it the same way as the default backend image — no other changes needed. In the
-Phase 1 config screen, select `flowsom`/`depeche` and leave the script path blank to use the R
-scripts bundled with the `conclave` package.
+To run it, use the same commands as the default backend, substituting the image name:
+
+```bash
+docker stop backend && docker rm backend
+docker run -d --name backend --network conclave-net \
+  -v conclave_gui_data:/data -p 8000:8000 conclave-backend-r
+```
+
+In the Phase 1 config screen, select `flowsom`/`depeche` and leave the script path blank to use
+the R scripts bundled with the `conclave` package.
 
 ## Features
 

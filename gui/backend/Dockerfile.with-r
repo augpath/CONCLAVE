@@ -1,19 +1,23 @@
 # Backend image with R + FlowSOM + DepecheR pre-installed, so 'depeche' and
 # 'flowsom' work as clustering methods out of the box.
 #
-# Build (separately from the default Dockerfile, since this is much slower
-# and produces a much larger image -- Bioconductor package compilation
-# typically takes 20-40+ minutes and adds several GB):
+# This is a SEPARATE image from the default backend (see ../README.md,
+# "Running it") -- most people should use the default (fast, no R). Only
+# build this one if you specifically need flowsom/depeche.
 #
-#   docker build --build-arg CACHEBUST=$(date +%s) -f backend/Dockerfile.with-r -t conclave-backend ./backend
+# Build (uses a different tag, conclave-backend-r, than the default image's
+# conclave-backend, so building this one never overwrites the fast build):
+#
+#   docker build --build-arg CACHEBUST=$(date +%s) -f backend/Dockerfile.with-r -t conclave-backend-r ./backend
 #
 # NOT built or tested against a real Docker daemon or the actual CRAN/
 # Bioconductor package servers -- neither was reachable from the
 # environment this was written in. Written to standard Bioconductor
-# installation practice, but you are the first real test of whether this
-# actually builds successfully. If FlowSOM or DepecheR fail to compile,
-# the error output from `docker build` will show which system library or
-# R dependency is missing -- report it back and it can be fixed here.
+# installation practice and refined across real build attempts (see the
+# system library comments below for what each round of failures needed),
+# but still not confirmed to build cleanly end to end. If it fails, the
+# `docker build` output will show which system library or R package
+# failed to compile -- report it back and it can be fixed here.
 
 FROM python:3.11-slim
 
@@ -21,9 +25,17 @@ WORKDIR /app
 
 # git: requirements.txt installs conclave via git+https
 # r-base, r-base-dev: R itself, plus headers needed to compile packages
-# The rest: system libraries commonly required to compile the dependency
-# trees of FlowSOM (flowCore, Biobase, ggplot2, igraph, ...) and DepecheR
-# (moments, dbscan, ggplot2, Rtsne, ...) from source via Bioconductor.
+# libuv1-dev, zlib1g-dev, libbz2-dev, liblzma-dev, libicu-dev,
+#   libpcre2-dev, libdeflate-dev: needed by the 'fs' package and other
+#   common compression/text-encoding dependencies across the Bioconductor
+#   ecosystem (found via a real build failure: 'fs' needs libuv1-dev)
+# libgl1-mesa-dev, libglu1-mesa-dev, libx11-dev, libxext-dev, libxt-dev:
+#   needed by 'rgl' (3D graphics), a dependency of 'mixOmics', a
+#   dependency of DepecheR (found via a real build failure: without
+#   these, rgl fails, which cascades to break mixOmics, which cascades
+#   to break DepecheR itself)
+# pandoc: needed by rmarkdown, another DepecheR dependency that failed
+#   in the same build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     r-base \
@@ -43,6 +55,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libtiff5-dev \
     libjpeg-dev \
     libgit2-dev \
+    libuv1-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    liblzma-dev \
+    libicu-dev \
+    libpcre2-dev \
+    libdeflate-dev \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    libx11-dev \
+    libxext-dev \
+    libxt-dev \
+    pandoc \
     cmake \
     && rm -rf /var/lib/apt/lists/*
 
