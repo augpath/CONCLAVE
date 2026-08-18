@@ -47,6 +47,24 @@ docker run -d --name frontend --network conclave-net \
 Uploaded data and job outputs persist in the `conclave_gui_data` volume across container
 restarts.
 
+### Rebuilding after a `conclave` code update
+
+`backend/requirements.txt` installs `conclave` from an unpinned `git+https://...` URL. Since that
+file's content never changes, a plain `docker build` reuses Docker's cached layer and silently
+keeps whatever `conclave` version was first built — it does **not** re-fetch the latest code.
+After pulling any update to the `conclave` package, rebuild the backend with a cache-busting
+build argument:
+
+```bash
+docker build --build-arg CACHEBUST=$(date +%s) -t conclave-backend ./backend
+```
+
+or force a full rebuild of everything:
+
+```bash
+docker build --no-cache -t conclave-backend ./backend
+```
+
 ### Without Docker (development)
 
 ```bash

@@ -12,6 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+
+# requirements.txt pins conclave via an unpinned git+https URL, so its file
+# content never changes -- Docker's layer cache would otherwise reuse an
+# old pip install result forever, silently ignoring every update pushed to
+# GitHub since. CACHEBUST forces the pip install layer to actually re-run.
+# Rebuild with: docker build --build-arg CACHEBUST=$(date +%s) -t conclave-backend ./backend
+# (or simply: docker build --no-cache -t conclave-backend ./backend)
+ARG CACHEBUST=1
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
