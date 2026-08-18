@@ -7,11 +7,20 @@ Requires run_phase1.py to have been run first. Phase 1 automatically
 copies annotation_template_<method>.csv files into output_phase1/annotations/
 -- fill in the 'annotation' column in each and save before running this.
 
-If nothing has been annotated yet, this script offers to generate
-PLACEHOLDER annotations (round-robin fake cell-type labels) so you can see
-the full pipeline run end to end -- this is for testing the pipeline
-mechanics only, NOT real biology. Don't use placeholder-annotated results
-for anything scientific.
+If your own annotation CSVs use a different filename, save them as
+annotation_template_<method>.csv (or <method>_annotated.csv) in
+output_phase1/annotations/ -- those are the two naming conventions Phase 2
+recognizes. Anything else is treated as unannotated, even if it contains
+real data.
+
+If nothing recognized has been annotated yet, this script offers to
+generate PLACEHOLDER annotations (round-robin fake cell-type labels) so
+you can see the full pipeline run end to end -- this is for testing the
+pipeline mechanics only, NOT real biology. Don't use placeholder-annotated
+results for anything scientific. If any .csv files exist in the
+annotations folder that don't match either naming convention, this script
+refuses to generate placeholders and lists them instead, in case they're
+real annotations that just need renaming.
 
 By default, consensus_methods isn't set explicitly -- Phase 2 auto-detects
 which methods to use for consensus based on which annotation files are
@@ -22,7 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from conclave.phase2.pipeline_complete import run_phase2_complete
+from conclave.phase2.pipeline_complete import run_phase2_complete, _discover_annotated_methods
 
 SCRIPT_DIR = Path(__file__).parent
 PHASE1_OUTPUT = SCRIPT_DIR / "output_phase1"
@@ -43,23 +52,26 @@ PLACEHOLDER_CELL_TYPES = [
 ]
 
 
-def _any_annotations_exist() -> bool:
+def _unrecognized_csv_files() -> list[Path]:
+    """CSV files in the annotations folder that don't match either naming
+    convention Phase 2 actually recognizes -- if any exist, they might be
+    real annotations under the wrong filename, so placeholder generation
+    refuses to run rather than silently ignoring them."""
     if not ANNOTATIONS_DIR.exists():
-        return False
-    for path in ANNOTATIONS_DIR.glob("annotation_template_*.csv"):
-        try:
-            df = pd.read_csv(path)
-        except Exception:
-            continue
-        if "annotation" in df.columns and df["annotation"].notna().any():
-            return True
-    return False
+        return []
+    unrecognized = []
+    for path in ANNOTATIONS_DIR.glob("*.csv"):
+        name = path.stem
+        is_known_pattern = name.startswith("annotation_template_") or name.endswith("_annotated")
+        if not is_known_pattern:
+            unrecognized.append(path)
+    return unrecognized
 
 
 def _write_placeholder_annotations():
     print()
     print("=" * 70)
-    print("No filled-in annotations found in", ANNOTATIONS_DIR)
+    print("No recognized annotations found in", ANNOTATIONS_DIR)
     print("Generating PLACEHOLDER annotations (round-robin fake cell types)")
     print("so you can see the full pipeline run end to end.")
     print("These are NOT real biology -- do not use for anything scientific.")
@@ -83,8 +95,28 @@ def _write_placeholder_annotations():
 
 
 def main():
-    if not _any_annotations_exist():
+    discovered = _discover_annotated_methods(ANNOTATIONS_DIR)
+    if not discovered:
+        unrecognized = _unrecognized_csv_files()
+        if unrecognized:
+            print()
+            print("=" * 70)
+            print("No recognized annotations found, but these .csv files exist in")
+            print(str(ANNOTATIONS_DIR) + ":")
+            for p in unrecognized:
+                print(f"  {p.name}")
+            print()
+            print("If these are real annotations, rename each to match one of the")
+            print("two naming conventions Phase 2 recognizes:")
+            print("  annotation_template_<method>.csv   e.g. annotation_template_phenograph.csv")
+            print("  <method>_annotated.csv             e.g. phenograph_annotated.csv")
+            print("Refusing to generate placeholder annotations, since these files")
+            print("might be real data under the wrong name.")
+            print("=" * 70)
+            raise SystemExit(1)
         _write_placeholder_annotations()
+    else:
+        print(f"Found real annotations for: {sorted(discovered.keys())}")
 
     df_labeled, template, single_templates, report = run_phase2_complete(
         phase1_output=str(PHASE1_OUTPUT),
