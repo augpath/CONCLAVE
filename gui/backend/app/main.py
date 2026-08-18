@@ -47,6 +47,26 @@ def _resolve_outdir(custom_outdir: Optional[str], default_dir: Path, job_id: str
     return default_dir / job_id
 
 
+def _warn_if_outside_data_dir(job, outdir: Path) -> None:
+    """If running via Docker, only DATA_DIR (mounted as a named volume) is
+    visible on the host and survives container removal -- a custom outdir
+    outside it is written successfully from the backend's point of view,
+    but invisible from outside the container and lost on `docker rm`. This
+    puts a clear warning directly in the job's own live log, since that's
+    what the GUI's progress view actually shows."""
+    try:
+        outdir.resolve().relative_to(DATA_DIR.resolve())
+    except ValueError:
+        job.logs.append(
+            f"WARNING: output directory '{outdir}' is not under {DATA_DIR}. "
+            f"If running via Docker, only {DATA_DIR} (the mounted volume) is "
+            f"visible on your host machine and survives 'docker rm' -- files "
+            f"written outside it will appear to vanish. Use a path under "
+            f"{DATA_DIR} (e.g. {DATA_DIR}/my_run), or leave this field blank "
+            f"for an auto-generated location under {DATA_DIR}."
+        )
+
+
 def _job_summary(job) -> dict:
     return {
         "id": job.id,
@@ -156,6 +176,7 @@ async def start_phase1(payload: Phase1Request):
     job.label = payload.label
     outdir = _resolve_outdir(payload.outdir, PHASE1_DIR, job.id)
     job.outdir = str(outdir)
+    _warn_if_outside_data_dir(job, outdir)
 
     job_manager.start(
         job,
@@ -365,6 +386,7 @@ async def start_phase2(payload: Phase2Request):
     job.label = payload.label
     outdir = _resolve_outdir(payload.outdir, PHASE2_DIR, job.id)
     job.outdir = str(outdir)
+    _warn_if_outside_data_dir(job, outdir)
 
     job_manager.start(
         job,

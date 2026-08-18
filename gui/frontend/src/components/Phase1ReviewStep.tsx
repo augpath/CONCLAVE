@@ -107,6 +107,33 @@ export default function Phase1ReviewStep({ jobId, onContinue, onBack }: Props) {
     }
   }
 
+  function csvEscape(value: string): string {
+    if (/[",\n]/.test(value)) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+  }
+
+  function handleDownloadTemplate(method: string) {
+    const methodRows = data!.clusters[method];
+    const methodEdits = edits[method] ?? {};
+    const header = "cluster_id,n_cells,annotation";
+    const lines = methodRows.map((row) => {
+      const annotation = methodEdits[String(row.cluster_id)] ?? row.annotation ?? "";
+      return [row.cluster_id, row.n_cells, csvEscape(annotation)].join(",");
+    });
+    const csv = [header, ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `annotation_template_${method}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   const rows = data.clusters[activeMethod];
   const mode = modes[activeMethod] ?? "browser";
 
@@ -143,6 +170,9 @@ export default function Phase1ReviewStep({ jobId, onContinue, onBack }: Props) {
           onClick={() => setModes((prev) => ({ ...prev, [activeMethod]: "upload" }))}
         >
           Upload annotated CSV
+        </button>
+        <button className="secondary" onClick={() => handleDownloadTemplate(activeMethod)}>
+          ⬇ Download {activeMethod} template
         </button>
       </div>
 
@@ -187,7 +217,8 @@ export default function Phase1ReviewStep({ jobId, onContinue, onBack }: Props) {
           <p className="muted">
             CSV must have <code>cluster_id</code> and <code>annotation</code> columns, with
             cluster_ids matching this method's actual clusters (
-            {rows.map((r) => r.cluster_id).join(", ")}).
+            {rows.map((r) => r.cluster_id).join(", ")}). Use the "Download {activeMethod} template"
+            button above to get a correctly-formatted starting point.
           </p>
           <img className="heatmap-img" src={heatmapUrl(jobId, activeMethod)} alt={`${activeMethod} heatmap`} />
           <input

@@ -204,6 +204,11 @@ export default function Phase1ConfigStep({ upload, values: v, onChange, onStarte
               onChange={(e) => update({ outdir: e.target.value })}
               placeholder="leave blank to use an auto-generated location"
             />
+            <span className="field-hint">
+              If running via Docker, this must be under /data (the mounted volume) to be visible
+              on your host machine and survive container restarts -- e.g. /data/my_run. A path
+              outside /data still writes successfully but is invisible outside the container.
+            </span>
           </label>
           <label className="checkbox-label">
             <input

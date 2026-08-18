@@ -125,6 +125,7 @@ button.secondary:hover:not(:disabled) { background: #ddd; }
 
 .error { color: #b3261e; font-weight: 600; }
 .warn { color: #8a5a00; }
+.field-hint { color: #666; font-size: 0.8rem; font-weight: normal; margin-top: 2px; }
 .ok { color: #1e7a34; font-weight: 600; }
 
 .log-view {

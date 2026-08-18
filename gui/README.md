@@ -146,6 +146,13 @@ Phase 2's config screen has the same output-directory field, plus a field to poi
 different Phase 1 output directory — any Phase 1 output, including runs from the CLI, a
 notebook, or an earlier GUI session, not only the run from the previous step.
 
+If running via Docker, a custom output directory must be under `/data` (the mounted volume) to
+be visible on your host machine and to survive `docker rm` — a path outside `/data` still writes
+successfully from the backend's point of view, but is invisible from outside the container and
+lost when the container is removed. Both config screens show this in the field's hint text, and
+if you use a path outside `/data` anyway, a warning appears at the top of that job's live
+progress log.
+
 ### Back navigation
 
 Every step has a Back button, and form values are preserved when navigating backward.
@@ -155,7 +162,9 @@ Every step has a Back button, and form values are preserved when navigating back
 Per method, choose between annotating in the browser or uploading a CSV annotated separately
 (offline, or by someone else). Uploaded files are validated before saving: `cluster_id` and
 `annotation` columns must be present, and the `cluster_id`s must exactly match that method's
-clusters from Phase 1.
+clusters from Phase 1. A "Download template" button per method exports the current cluster
+table (including any in-progress edits) as a CSV, so you don't need `docker exec`/`docker cp` to
+get a starting point for external annotation.
 
 ## Known limitations
 
