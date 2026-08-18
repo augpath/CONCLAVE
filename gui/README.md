@@ -66,18 +66,32 @@ restarts.
 `backend/requirements.txt` installs `conclave` from an unpinned `git+https://...` URL. Since that
 file's content never changes, a plain `docker build` reuses Docker's cached layer and silently
 keeps whatever `conclave` version was first built — it does **not** re-fetch the latest code.
-After pulling any update to the `conclave` package, rebuild the backend with a cache-busting
-build argument:
+After pulling any update to the `conclave` package, rebuild with a cache-busting build argument.
+
+**Rebuild whichever backend you're actually running** — check with `docker ps` if you're not
+sure (look at the `IMAGE` column for the `backend` row):
 
 ```bash
+# If you're running the default backend (conclave-backend):
 docker build --build-arg CACHEBUST=$(date +%s) -t conclave-backend ./backend
+
+# If you're running the R-enabled backend (conclave-backend-r):
+docker build --build-arg CACHEBUST=$(date +%s) -f backend/Dockerfile.with-r -t conclave-backend-r ./backend
 ```
 
-or force a full rebuild of everything:
+Then restart the container with that same image, e.g.:
 
 ```bash
-docker build --no-cache -t conclave-backend ./backend
+docker stop backend && docker rm backend
+docker run -d --name backend --network conclave-net \
+  -v conclave_gui_data:/data -p 8000:8000 conclave-backend    # or conclave-backend-r
 ```
+
+**After restarting, run `docker ps` again and check the `IMAGE` column matches what you meant to
+run.** Restarting with the wrong image (e.g. `conclave-backend` when you meant
+`conclave-backend-r`) is an easy mistake to make when copying commands from memory, and it fails
+silently -- `flowsom`/`depeche` will simply error out again, with no indication you're on the
+wrong image.
 
 ### Without Docker (development)
 
