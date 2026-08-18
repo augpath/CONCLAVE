@@ -83,13 +83,26 @@ Then open the URL Vite prints (usually http://localhost:5173).
 
 ## FlowSOM / DepecheR
 
-The backend Docker image does not include R — it uses a `python:3.11-slim` base to keep builds
-fast. To use `flowsom`/`depeche` as clustering methods:
+The default backend Docker image does not include R — it uses a `python:3.11-slim` base to keep
+builds fast. To use `flowsom`/`depeche` as clustering methods, build the R-enabled variant
+instead:
 
-1. Install R and the FlowSOM/DepecheR Bioconductor packages inside the backend container, or
-   extend `backend/Dockerfile` with an R install step.
-2. In the Phase 1 config screen, select `flowsom`/`depeche`. Leave the script path blank to use
-   the R scripts bundled with the `conclave` package, or point at your own.
+```bash
+docker build --build-arg CACHEBUST=$(date +%s) -f backend/Dockerfile.with-r -t conclave-backend ./backend
+```
+
+This installs R and compiles FlowSOM/DepecheR from Bioconductor, which is considerably slower
+(commonly 20-40+ minutes) and produces a larger image (several GB more) than the default build.
+It has not been built or tested against a real Docker daemon or the actual CRAN/Bioconductor
+package servers in the environment this was written in — it follows standard Bioconductor
+installation practice, but hasn't been confirmed to actually build successfully yet. If it fails,
+the `docker build` output will show which system library or R package failed to compile; that's
+the place to start debugging, and `Dockerfile.with-r`'s comments explain what each dependency is
+for.
+
+Once built, run it the same way as the default backend image — no other changes needed. In the
+Phase 1 config screen, select `flowsom`/`depeche` and leave the script path blank to use the R
+scripts bundled with the `conclave` package.
 
 ## Features
 

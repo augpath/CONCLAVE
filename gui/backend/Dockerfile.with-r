@@ -1,0 +1,73 @@
+# Backend image with R + FlowSOM + DepecheR pre-installed, so 'depeche' and
+# 'flowsom' work as clustering methods out of the box.
+#
+# Build (separately from the default Dockerfile, since this is much slower
+# and produces a much larger image -- Bioconductor package compilation
+# typically takes 20-40+ minutes and adds several GB):
+#
+#   docker build --build-arg CACHEBUST=$(date +%s) -f backend/Dockerfile.with-r -t conclave-backend ./backend
+#
+# NOT built or tested against a real Docker daemon or the actual CRAN/
+# Bioconductor package servers -- neither was reachable from the
+# environment this was written in. Written to standard Bioconductor
+# installation practice, but you are the first real test of whether this
+# actually builds successfully. If FlowSOM or DepecheR fail to compile,
+# the error output from `docker build` will show which system library or
+# R dependency is missing -- report it back and it can be fixed here.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# git: requirements.txt installs conclave via git+https
+# r-base, r-base-dev: R itself, plus headers needed to compile packages
+# The rest: system libraries commonly required to compile the dependency
+# trees of FlowSOM (flowCore, Biobase, ggplot2, igraph, ...) and DepecheR
+# (moments, dbscan, ggplot2, Rtsne, ...) from source via Bioconductor.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    r-base \
+    r-base-dev \
+    build-essential \
+    gfortran \
+    libblas-dev \
+    liblapack-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libxml2-dev \
+    libfontconfig1-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libtiff5-dev \
+    libjpeg-dev \
+    libgit2-dev \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install FlowSOM and DepecheR via Bioconductor. This is the slow, large
+# step -- compiling their combined dependency tree from source.
+RUN Rscript -e ' \
+    if (!require("BiocManager", quietly = TRUE)) install.packages("BiocManager", repos = "https://cloud.r-project.org"); \
+    BiocManager::install(c("FlowSOM", "DepecheR"), update = FALSE, ask = FALSE)'
+
+# Verify both actually loaded -- fails the build here (not silently at
+# runtime) if something didn't install correctly.
+RUN Rscript -e 'library(FlowSOM); library(DepecheR); cat("FlowSOM and DepecheR OK\n")'
+
+COPY requirements.txt .
+
+# See the default Dockerfile's comment on CACHEBUST -- same reasoning:
+# requirements.txt's content doesn't change between conclave commits, so
+# without this, Docker would cache a stale conclave install here too.
+ARG CACHEBUST=1
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+
+ENV CONCLAVE_GUI_DATA=/data
+VOLUME ["/data"]
+
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
