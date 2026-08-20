@@ -67,7 +67,7 @@ Requirements: an NVIDIA GPU (Compute Capability 7.0+: Volta, Turing, Ampere, or 
 ### R Support for FlowSOM/DepecheR (optional)
 
 The `flowsom_clustering.R` and `depeche_clustering.R` scripts are bundled with the package and
-installed automatically with `pip install` — no separate download needed. You do need R itself
+installed automatically with `pip install`, therefore, no separate download needed. You do need R itself
 and the FlowSOM/DepecheR R packages installed separately:
 
 ```bash
