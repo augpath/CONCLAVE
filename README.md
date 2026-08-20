@@ -136,11 +136,11 @@ df_clustered, metadata = run_annotation_pipeline_with_resume(
 print(f"Clustered {len(df_clustered):,} cells")
 ```
 
-`flowsom_rscript`/`depeche_rscript` don't need to be passed manually — their path is
+`flowsom_rscript`/`depeche_rscript` don't need to be passed manually while their path is
 auto-detected from the installed package. Pass them only to point at your own copy of a script.
 
 **Resuming.** By default, re-running with the same `outdir` skips whatever's already completed
-and only runs what's new or missing — add a clustering method and only that method runs. Pass
+and only runs what's new or missing; add a clustering method and only that method runs. Pass
 `force_restart=True` to ignore existing checkpoints and start from scratch.
 
 **Partial failures.** If one clustering method fails (for example, R isn't set up for
@@ -150,7 +150,7 @@ and only runs what's new or missing — add a clustering method and only that me
 
 For a guided walkthrough — picking markers from your own CSV, and every normalization/sampling/DR/clustering option with its hyperparameters — see [`notebooks/CONCLAVE_Phase1.ipynb`](notebooks/CONCLAVE_Phase1.ipynb) and [`notebooks/CONCLAVE_Phase1_Reference.ipynb`](notebooks/CONCLAVE_Phase1_Reference.ipynb). For Phase 2, see [`notebooks/CONCLAVE_Phase2.ipynb`](notebooks/CONCLAVE_Phase2.ipynb).
 
-Prefer plain scripts? See [`examples/`](examples/): `run_phase1.py`, `run_phase2.py`, and
+If you prefer pure scripts see [`examples/`](examples/): `run_phase1.py`, `run_phase2.py`, and
 `run_full_pipeline.py` (chains both), with a sample dataset (`Melanoma_example.csv`) included.
 
 **Phase 1 outputs:**
